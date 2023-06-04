@@ -1,0 +1,16 @@
+[package]
+name = "repos"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+domains = { path ="../domains" }
+uuid = { version = "1.2.2", features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["fs"] }
+log = "0.4"
+
+[dev-dependencies]
+apache-avro = { version = "0.14", features = ["snappy"] }

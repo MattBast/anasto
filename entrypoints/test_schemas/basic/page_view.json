@@ -1,0 +1,1 @@
+{"schema":{"fields":[{"name":"hi","type":"string"}],"name":"page_view","type":"record"},"table_name":"page_view"}

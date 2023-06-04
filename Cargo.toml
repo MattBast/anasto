@@ -1,0 +1,11 @@
+[workspace]
+members = [
+	"main",
+	"entrypoints",
+	"domains",
+	"bus",
+	"handlers",
+	"repos",
+	"config",
+	"sub"
+]

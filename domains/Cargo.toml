@@ -1,0 +1,17 @@
+[package]
+name = "domains"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = "1.0"
+serde_json = "1.0"
+serde_urlencoded = "0.7"
+serde_derive = "1.0"
+uuid = { version = "1.2.2", features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
+time = { version = "0.3.11", features = ["serde", "serde-well-known"] }
+jsonschema = "0.16"
+tokio = { version = "1", features = ["full"] }
+apache-avro = { version = "0.14", features = ["snappy"] }

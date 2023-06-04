@@ -1,0 +1,16 @@
+{
+    "bookmark_properties": [], 
+    "event_type": "SCHEMA", 
+    "fields_changed": null, 
+    "key_properties": [], 
+    "operation": "CREATE", 
+    "schema": {
+        "fields": [{
+            "name": "name", 
+            "type": "string"
+        }], 
+        "name": "schema_two", 
+        "type": "record"
+    }, 
+    "table_name": "schema_two"
+}
