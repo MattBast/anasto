@@ -22,7 +22,8 @@ pub struct Config {
    pub schemas: Schemas,
 
    /// settings for the Subscribers
-   pub subscribers: Option<Vec<Subscriber>>,
+   #[serde(default)]
+   pub subscriber: Vec<Subscriber>,
 
 }
 
@@ -240,6 +241,7 @@ fn de_schemas_url<'de, D: Deserializer<'de>>(d: D) -> Result<PathBuf, D::Error> 
 
 /// The Subscriber variations
 #[derive(Debug, Deserialize)]
+#[serde(tag="type")]
 pub enum Subscriber {
    
    /// Creates a subscriber that writes Records to localfiles
@@ -252,10 +254,52 @@ pub enum Subscriber {
 #[derive(Debug, Deserialize)]
 pub struct LocalfileSubscriber {
    
-   /// The parent filepath where all data this Subscriber handles will
+    /// The parent filepath where all data this Subscriber handles will
     /// be written to
-    pub dirpath_str: PathBuf,
+    #[serde(deserialize_with="localfile_path")]
+    pub dirpath: PathBuf,
     /// The type of file to write. Defaults to JSON.
+    #[serde(default="default_local_filetype", deserialize_with="local_filetype")]
     pub filetype: String,
+
+}
+
+/// Check that the path points at a directory and ends with a / character
+/// Create the directory if it doesn't exist
+fn localfile_path<'de, D: Deserializer<'de>>(d: D) -> Result<PathBuf, D::Error> {
+
+    let s = String::deserialize(d)?;
+    let filepath = PathBuf::from(s.clone());
+
+    if s.is_empty() {
+        let error_message = format!("The [subscriber] dirpath: {} has no characters in it.", s);
+        return Err(D::Error::custom(error_message));
+    }
+
+    if !s.ends_with('/') {
+        let error_message = format!("The [subscriber] dirpath: {} did not end with a / character.", s);
+        return Err(D::Error::custom(error_message));
+    }
+    
+    Ok(filepath)
+
+}
+
+fn default_local_filetype() -> String {
+
+    "jsonl".to_string()
+
+}
+
+fn local_filetype<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    
+    let mut filetype = String::deserialize(d)?;
+    filetype.make_ascii_lowercase();
+    
+    if !["jsonl".to_owned(), "csv".to_owned(), "parquet".to_owned(), "avro".to_owned()].contains(&filetype) {
+        return Err(D::Error::custom("The filetype was not one of: ['jsonl', 'csv', 'parquet', 'avro']"));
+    }
+
+    Ok(filetype)
 
 }

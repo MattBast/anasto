@@ -1,4 +1,4 @@
-use config::tables::Config;
+use config::tables::{Config, Subscriber};
 use std::path::PathBuf;
 
 #[test]
@@ -79,14 +79,23 @@ fn part_default_config() {
 fn one_localfile_subscriber() {
     
     let config: Config = toml::from_str(r#"
-       [[subscriber.localfile]]
-       dirpath_str = "./destination/"
+       [[subscriber]]
+       type = "Localfile"
+       dirpath = "./destination/"
        filetype = "avro"
     "#).unwrap();
 
-    assert_eq!(config.subscribers.unwrap().len(), 1);
-    assert_eq!(config.subscribers.unwrap()[0].dirpath_str, "./destination/".parse());
-    assert_eq!(config.subscribers.unwrap()[0].filetype, "avro".parse());
+    assert_eq!(config.subscriber.len(), 1);
+
+    match &config.subscriber[0] {
+        
+        Subscriber::Localfile(sub) => {
+            assert_eq!(sub.dirpath, PathBuf::from("./destination/"));
+            assert_eq!(sub.filetype, "avro".to_string());
+        }
+
+    }
+            
 
 }
 
@@ -94,20 +103,86 @@ fn one_localfile_subscriber() {
 fn two_localfile_subscriber() {
     
     let config: Config = toml::from_str(r#"
-       [[subscriber.localfile]]
-       dirpath_str = "./avro_destination/"
+       [[subscriber]]
+       type = "Localfile"
+       dirpath = "./avro_destination/"
        filetype = "avro"
 
-       [[subscriber.localfile]]
-       dirpath_str = "./json_destination/"
-       filetype = "json"
+       [[subscriber]]
+       type = "Localfile"
+       dirpath = "./json_destination/"
+       filetype = "jsonl"
     "#).unwrap();
 
-    assert_eq!(config.subscribers.unwrap().len(), 2);
-    assert_eq!(Ok(config.subscribers.unwrap()[0].dirpath_str), "./avro_destination/".parse());
-    assert_eq!(Ok(config.subscribers.unwrap()[0].filetype), "avro".parse());
+    assert_eq!(config.subscriber.len(), 2);
 
-    assert_eq!(Ok(config.subscribers.unwrap()[0].dirpath_str), "./json_destination/".parse());
-    assert_eq!(Ok(config.subscribers.unwrap()[0].filetype), "json".parse());
+    match &config.subscriber[0] {
+        
+        Subscriber::Localfile(sub) => {
+            assert_eq!(sub.dirpath, PathBuf::from("./avro_destination/"));
+            assert_eq!(sub.filetype, "avro".to_string());
+        }
+        
+    }
+
+    match &config.subscriber[1] {
+        
+        Subscriber::Localfile(sub) => {
+            assert_eq!(sub.dirpath, PathBuf::from("./json_destination/"));
+            assert_eq!(sub.filetype, "jsonl".to_string());
+        }
+        
+    }
+
+            
+
+}
+
+#[test]
+fn localfile_subscriber_path_not_a_directory() {
+    
+    let config: Result<Config, toml::de::Error> = toml::from_str(r#"
+       [[subscriber]]
+       type = "Localfile"
+       dirpath = "./destination/filename.json"
+       filetype = "avro"
+    "#);
+
+    assert!(config.is_err());
+
+}
+
+#[test]
+fn localfile_subscriber_default_filetype() {
+    
+    let config: Config = toml::from_str(r#"
+       [[subscriber]]
+       type = "Localfile"
+       dirpath = "./destination/"
+    "#).unwrap();
+
+    match &config.subscriber[0] {
+        
+        Subscriber::Localfile(sub) => {
+            assert_eq!(sub.dirpath, PathBuf::from("./destination/"));
+            assert_eq!(sub.filetype, "jsonl".to_string());
+        }
+        
+    }
+
+}
+
+
+#[test]
+fn localfile_subscriber_filetype_not_available() {
+    
+    let config: Result<Config, toml::de::Error> = toml::from_str(r#"
+       [[subscriber]]
+       type = "Localfile"
+       dirpath = "./destination/"
+       filetype = "rs"
+    "#);
+
+    assert!(config.is_err());
 
 }
