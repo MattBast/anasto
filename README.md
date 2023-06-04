@@ -2,6 +2,8 @@
 
 The idea of Anasto is to make it easy to collect real time streaming events and to have them reliably written to various storage destinations. The intention is to produce something that is easy for developers to deploy and integrate with the tech they're currently using.
 
+> Note: Anasto has been started as a personal project and is very much in the early stages. I hope you like it and I would love any feedback or ideas you have but please don't expect a feature rich application that is ready for production (yet :crossed_fingers:).
+
 ## Overview
 The best way to think of Anasto is as a middleman between source and destination data stores. It will listen to one or more sources and copy all the data it finds to one or more destinations. Anasto favours realtime so changes in sources systems should be heard immediately and copied to the destination systems soon after.
 
