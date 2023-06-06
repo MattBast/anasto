@@ -24,7 +24,7 @@ async fn setup(
     let (tx, rx) = mpsc::unbounded_channel();
 
     // create the subscriber and start it listening for records
-    let subscriber = Localfile::new(PathBuf::from(path), filetype).unwrap();
+    let subscriber = Localfile::new(&PathBuf::from(path), filetype).unwrap();
     let handle = start_subscriber(Box::new(subscriber), rx, false).await.unwrap();
 
     (tx, handle)
