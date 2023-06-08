@@ -1,7 +1,6 @@
 use std::path::Path;
 use domains::record::Record;
 use crate::sub_trait::Subscriber;
-use std::path::PathBuf;
 use std::fs::{ create_dir_all, File };
 use std::io::{Error, ErrorKind, Write, LineWriter};
 use uuid::Uuid;
@@ -11,8 +10,6 @@ use apache_avro::Codec;
 use apache_avro::Schema;
 use std::sync::Arc;
 
-
-// use tokio::runtime::Runtime;
 use arrow_array::{
 	// Int32Array, 
 	// Int64Array, 
@@ -25,11 +22,10 @@ use arrow_array::RecordBatch;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use std::collections::{HashMap};
-// use log::{ 
-	// info, 
-	// warn, 
-	// error 
-// };
+use log::{ 
+	info, 
+	error 
+};
 
 
 /// A Subscriber that writes records to files in the local filesystem.
@@ -37,23 +33,30 @@ use std::collections::{HashMap};
 /// the data can be read into tables by other systems.
 #[derive(Debug)]
 pub struct Localfile {
+	
+	/// A unique name for the subscriber. This helps to identify the logs relating to this subscriber.
+	name: String,
+
 	/// The parent filepath where all data this Subscriber handles will
 	/// be written to
 	dirpath_str: String,
+	
 	/// The type of file to write. Defaults to JSON.
 	filetype: String,
+
 }
 
 impl Localfile {
 
 	/// Create a new localfile subscriber
 	pub fn new(
-		dirpath: &PathBuf, 
+		name: String,
+		dirpath: &Path, 
 		filetype: String, 
 	) -> Result<Localfile, std::io::Error> {
 		
 		// Convert the directory path into a string for easy access in future functions
-		let dirpath_str = match dirpath.clone().into_os_string().into_string() {
+		let dirpath_str = match dirpath.to_path_buf().into_os_string().into_string() {
 			
 			Ok(dirpath) => dirpath,
 			Err(_) => return Err(Error::new(ErrorKind::Other, "The dirpath did not contain valid unicode characters."))
@@ -61,10 +64,12 @@ impl Localfile {
 		};
 
 		// Create the Subscriber
-		let connector = Localfile { dirpath_str, filetype };
+		let connector = Localfile { name, dirpath_str, filetype };
 
 		// do a check that the dirpath is a directory and that it ends with a `/` char
 		connector.check_dirpath()?;
+
+		info!(target: &connector.name, "Initialised Localfile subscriber called {} writing {} type files to {}", &connector.name, connector.filetype, connector.dirpath_str);
 
 		Ok(connector)
 
@@ -88,10 +93,10 @@ impl Localfile {
 	}
 
 	// create a json file from a vector of records
-	fn create_json_records(&self, table_name: String, records: Vec<Record>) -> Result<(), std::io::Error> {
+	fn create_json_records(&self, table_name: String, records: Vec<Record>) -> Result<String, std::io::Error> {
 
 		let file_path = format!("{}{}/{}.jsonl", self.dirpath_str, table_name, Uuid::new_v4());
-		let file = File::create(file_path)?;
+		let file = File::create(&file_path)?;
 		let mut file = LineWriter::new(file);
 
 		// write the records to the file
@@ -104,15 +109,15 @@ impl Localfile {
 
 	    file.flush()?;
 
-		Ok(())
+		Ok(file_path)
 
 	}
 
 	// create a csv file from a vector of records
-	fn create_csv_records(&self, table_name: String, records: Vec<Record>) -> Result<(), std::io::Error> {
+	fn create_csv_records(&self, table_name: String, records: Vec<Record>) -> Result<String, std::io::Error> {
 
 		let file_path = format!("{}{}/{}.csv", self.dirpath_str, table_name, Uuid::new_v4());
-		let mut wtr = CsvWriter::from_path(file_path)?;
+		let mut wtr = CsvWriter::from_path(&file_path)?;
 		let mut headers_written = false;
 
 		// write the records to the file
@@ -144,19 +149,15 @@ impl Localfile {
 
 	    wtr.flush()?;
 
-		Ok(())
+		Ok(file_path)
 
 	}
 
 
 	// create an avro file from a vector of records
-	fn create_avro_records(&self, table_name: String, records: Vec<Record>) -> Result<(), std::io::Error> {
+	fn create_avro_records(&self, table_name: String, records: Vec<Record>) -> Result<String, std::io::Error> {
 
-		// let schema = match self.schemas.read().await.get(&table_name) {
-		// 	Some(schema) => schema.schema.clone(),
-		// 	None => return Err(Error::new(ErrorKind::Other, "Table schema does not exist."))
-		// };
-
+		// get the schema from the first record in the vector
 		let schema = Schema::parse_str(&records[0].get_raw_schema()).unwrap();
 		let mut writer = AvroWriter::with_codec(&schema, Vec::new(), Codec::Snappy);
 
@@ -170,93 +171,75 @@ impl Localfile {
 
 		// create and write all content to the file
 	    let file_path = format!("{}{}/{}.avro", self.dirpath_str, table_name, Uuid::new_v4());
-	    std::fs::write(file_path, writer.into_inner().unwrap())?;
+	    std::fs::write(&file_path, writer.into_inner().unwrap())?;
 
-		Ok(())
+		Ok(file_path)
 
 	}
 
 
 	// create a parquet file from a vector of records
-	fn create_parquet_records(&self, table_name: String, records: Vec<Record>) -> Result<(), std::io::Error> {
+	fn create_parquet_records(&self, table_name: String, records: Vec<Record>) -> Result<String, std::io::Error> {
 
+		// re-arrange rows into columns and return as Parquet RecordBatch type
 		let batch = self.create_batch(records);
 
+		// create a file for the batch
 		let file_path = format!("{}{}/{}.parquet", self.dirpath_str, &table_name, Uuid::new_v4());
 		let path = Path::new(&file_path);
+		let file = File::create(path).unwrap();
 
-		// let ids = Int32Array::from(vec![1, 2, 3, 4]);
-		// let vals = Int32Array::from(vec![5, 6, 7, 8]);
-		// let batch = RecordBatch::try_from_iter(vec![
-		// 	("id", Arc::new(ids) as ArrayRef),
-		// 	("val", Arc::new(vals) as ArrayRef),
-		// ]).unwrap();
-
-		let file = File::create(&path).unwrap();
-
-		// Default writer properties
+		// create a Parquet writer with the default properties
 		let props = WriterProperties::builder().build();
-
 		let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props)).unwrap();
 
+		// write the batch to the file
 		writer.write(&batch).expect("Writing batch");
 
-		// writer must be closed to write footer
+		// write the required Parquet footer to the file and close it
 		writer.close().unwrap();
 
-		Ok(())
+		Ok(file_path)
 
 	}
 
-
+	// re-arrange rows into columns and return as Parquet RecordBatch type
 	fn create_batch(&self, records: Vec<Record>) -> RecordBatch {
 		
+		// a hashmap where each element is a column of values. 
+		// The key is the column name
 		let mut columns: HashMap<String, Vec<String>> = HashMap::new();
 
+		// loop through each record organising them into columns
 		for record in records {
 			
 			let record_json = record.get_record();
 
-			match record_json {
-				
-				serde_json::Value::Object(record_json) => {
+			if let serde_json::Value::Object(record_json) = record_json {
 					
-					for key in record_json.keys() {
-						
-						if !columns.contains_key(&key.to_string()) {
-			                columns.insert(key.to_string(), Vec::new());
-			            }
-						
-						columns.get_mut(&key.to_string()).unwrap().push(record_json[key].to_string());
-						
-					}
-
-				},
-				
-				_ => ()
+				for key in record_json.keys() {
+					
+					// If this is the first time the loop has seen a column, create a key for it.
+					columns.entry(key.to_string()).or_insert_with(Vec::new);
+					// Then put the value in the column vector.
+					columns.get_mut(&key.to_string()).unwrap().push(record_json[key].to_string());
+					
+				}
 
 			};
 
 		}
 
+		// merge the columns (vectors of values) into one vector of Parquet ArrayRefs
 		let mut record_batch = Vec::new();
 
 		for (key, values) in columns {
 			
-			// let arrow_array = match values[0] {
-			// 	serde_json::Value::Null => StringArray::from(values),
-			//     serde_json::Value::Bool(_) => StringArray::from(values),
-			//     serde_json::Value::Number(_) => Int64Array::from(values),
-			//     serde_json::Value::String(_) => StringArray::from(values),
-			//     serde_json::Value::Array(_) => ListArray::from(values),
-			//     serde_json::Value::Object(_) => MapArray::from(values),
-			// };
-
 			record_batch.push((key, Arc::new(StringArray::from(values)) as ArrayRef));
 
 		}
 
-		// let vals = Int32Array::from(vec![5, 6, 7, 8]);
+		// change type from vector to Parquet RecordBatch and return the batch
 		RecordBatch::try_from_iter(record_batch).unwrap()
 
 	}
@@ -267,39 +250,57 @@ impl Subscriber for Localfile {
 
 	fn create_records(&self, records: Vec<Record>) -> Result<(), std::io::Error> {
 		
+		info!(target: &self.name, "Received {} records.", records.len());
+
 		// check if a directory for the table exists. If not, create it.
 		let table_name = records[0].get_name();
-		self.check_table(&table_name[..]).unwrap();
+		match self.check_table(&table_name[..]) {
+
+			Ok(_) => (),
+			Err(error) => {
+				error!(target: &self.name, "Failed to create the table {}", &table_name);
+				return Err(error)
+			},
+
+		};
 		
 		// check what type of file the user wants 
-		match self.filetype.to_lowercase().as_str() {
+		let write_result = match self.filetype.to_lowercase().as_str() {
+			
 			"jsonl" => self.create_json_records(table_name, records),
 			"csv" => self.create_csv_records(table_name, records),
 			"avro" => self.create_avro_records(table_name, records),
 			"parquet" => self.create_parquet_records(table_name, records),
 			_ => self.create_json_records(table_name, records),
-		}
 
+		};
+
+		match write_result {
+			
+			Ok(filepath) => {
+				info!(target: &self.name, "Wrote batch of records to {}", filepath);
+				Ok(())
+			},
+			Err(error) => {
+				error!(target: &self.name, "Failed to write batch of records");
+				Err(error)
+			},
+
+		}
 
 	}
 
 	fn upsert_records(&self, records: Vec<Record>) -> Result<(), std::io::Error> {
 		
-		// check if a directory for the table exists. If not, create it.
-		let table_name = records[0].get_name();
-		self.check_table(&table_name[..]).unwrap();
-
-		Ok(())
+		// there is no upsert mode for localfiles so just create the records
+		self.create_records(records)
 
 	}
 
 	fn delete_records(&self, records: Vec<Record>) -> Result<(), std::io::Error> {
 		
-		// check if a directory for the table exists. If not, create it.
-		let table_name = records[0].get_name();
-		self.check_table(&table_name[..]).unwrap();
-
-		Ok(())
+		// there is no delete mode for localfiles so just create the records
+		self.create_records(records)
 
 	}
 

@@ -175,7 +175,7 @@ fn json_to_avro(json: &serde_json::Value) -> AvroValue {
             
             let avro_value_array: Vec<AvroValue> = value
                 .iter()
-                .map(|value| json_to_avro(value))
+                .map(json_to_avro)
                 .collect();
 
             AvroValue::Array(avro_value_array)

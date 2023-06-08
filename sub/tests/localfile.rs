@@ -24,7 +24,7 @@ async fn setup(
     let (tx, rx) = mpsc::unbounded_channel();
 
     // create the subscriber and start it listening for records
-    let subscriber = Localfile::new(&PathBuf::from(path), filetype).unwrap();
+    let subscriber = Localfile::new("localfile_sub".to_string(), &PathBuf::from(path), filetype).unwrap();
     let handle = start_subscriber(Box::new(subscriber), rx, false).await.unwrap();
 
     (tx, handle)
@@ -34,14 +34,10 @@ async fn setup(
 // helper function to create records 
 fn test_records(table_name: &'static str, records_count: u32) -> Vec<Record> {
 
-    // generate some test records
-    // ************************************************************************
-    // there's an issue in the way Records are created. They are defaulting to Map
-    // schemas when they should be Record schemas. This causes a breakage when a
-    // Record schema is used here. This is an issue that needs fishing out.
-    // ************************************************************************
+    // ************************************************************************************
+    // take out this default and add some tests for none record schema types like strings and booleans
+    // ************************************************************************************
     let schema = format!("{{  \"type\": \"record\",\"name\": \"{}\",\"fields\": [{{\"name\": \"id\", \"type\": \"string\"}}, {{\"name\": \"value\", \"type\": \"string\"}}] }}", table_name);
-    // let schema = r#"{"type": "map", "values": "string", "default": {}}"#;
 
     let mut test_records: Vec<Record> = Vec::with_capacity(records_count as usize);
     

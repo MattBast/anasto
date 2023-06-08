@@ -4,6 +4,7 @@ use serde_derive::{Deserialize};
 use std::net::{ Ipv4Addr };
 use std::path::PathBuf;
 use std::fs::create_dir_all;
+use rnglib::{RNG, Language};
 
 /// Top level container of all the fields in the config file
 #[derive(Debug, Deserialize)]
@@ -254,10 +255,16 @@ pub enum Subscriber {
 #[derive(Debug, Deserialize)]
 pub struct LocalfileSubscriber {
    
+    /// A unique name for the subscriber. This helps to identify the logs relating 
+    /// to this subscriber.
+    #[serde(default="random_name")]
+    pub name: String,
+
     /// The parent filepath where all data this Subscriber handles will
     /// be written to
     #[serde(deserialize_with="localfile_path")]
     pub dirpath: PathBuf,
+
     /// The type of file to write. Defaults to JSON.
     #[serde(default="default_local_filetype", deserialize_with="local_filetype")]
     pub filetype: String,
@@ -282,6 +289,13 @@ fn localfile_path<'de, D: Deserializer<'de>>(d: D) -> Result<PathBuf, D::Error> 
     }
     
     Ok(filepath)
+
+}
+
+fn random_name() -> String {
+
+    let rng = RNG::try_from(&Language::Fantasy).unwrap();
+    rng.generate_name()
 
 }
 
