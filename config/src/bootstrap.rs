@@ -157,7 +157,12 @@ async fn start_subscribers(config: Config, bus_tx: mpsc::UnboundedSender<Event>)
             Subscriber::Localfile(config) => {
                 
                 info!(target: "bootstrap", "Localfile subscriber found in config writing {} files to {}.", &config.filetype.to_string(), &config.dirpath.display());
-                sub::localfile::Localfile::new(config.name.clone(), &config.dirpath, config.filetype.to_string())
+                sub::localfile::Localfile::new(
+                    config.name.clone(), 
+                    &config.dirpath, 
+                    config.filetype.to_string(),
+                    config.keep_headers
+                )
 
             },
 

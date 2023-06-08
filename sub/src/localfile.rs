@@ -44,6 +44,9 @@ pub struct Localfile {
 	/// The type of file to write. Defaults to JSON.
 	filetype: String,
 
+	/// If the user would like the Record event headers to be included in the write
+	keep_headers: bool,
+
 }
 
 impl Localfile {
@@ -52,7 +55,8 @@ impl Localfile {
 	pub fn new(
 		name: String,
 		dirpath: &Path, 
-		filetype: String, 
+		filetype: String,
+		keep_headers: bool, 
 	) -> Result<Localfile, std::io::Error> {
 		
 		// Convert the directory path into a string for easy access in future functions
@@ -64,7 +68,7 @@ impl Localfile {
 		};
 
 		// Create the Subscriber
-		let connector = Localfile { name, dirpath_str, filetype };
+		let connector = Localfile { name, dirpath_str, filetype, keep_headers };
 
 		// do a check that the dirpath is a directory and that it ends with a `/` char
 		connector.check_dirpath()?;
@@ -101,7 +105,11 @@ impl Localfile {
 
 		// write the records to the file
 	    records.into_iter().try_for_each(|record| {
-	    	let line = format!("{}{}", record.get_record(), "\n");
+	    	
+	    	let line = match self.keep_headers {
+	    		true => format!("{:?}{}", record, "\n"),
+	    		false => format!("{}{}", record.get_record(), "\n"),
+	    	};
 	    	file.write_all(&line.into_bytes())?;
 
 	    	Ok::<(), std::io::Error>(())

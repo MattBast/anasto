@@ -269,6 +269,10 @@ pub struct LocalfileSubscriber {
     #[serde(default="default_local_filetype", deserialize_with="local_filetype")]
     pub filetype: String,
 
+    /// If the user would like the Record event headers to be included in the write
+    #[serde(default)]
+    pub keep_headers: bool,
+
 }
 
 /// Check that the path points at a directory and ends with a / character
