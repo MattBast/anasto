@@ -133,10 +133,27 @@ impl Localfile {
 	    	
 	    	if !headers_written {
 	    		
-	    		record.get_record().as_object().unwrap().keys().try_for_each(|key| {
-		    		wtr.write_field(key.as_str())?;
-		    		Ok::<(), std::io::Error>(())
-		    	})?;
+	    		match self.keep_headers {
+		    		
+		    		true => {
+		    			
+		    			record.get_record_with_headers().as_object().unwrap().keys().try_for_each(|key| {
+				    		wtr.write_field(key.as_str())?;
+				    		Ok::<(), std::io::Error>(())
+				    	})?;
+
+		    		},
+		    		
+		    		false => {
+		    			
+		    			record.get_record().as_object().unwrap().keys().try_for_each(|key| {
+				    		wtr.write_field(key.as_str())?;
+				    		Ok::<(), std::io::Error>(())
+				    	})?;
+
+		    		},
+
+		    	};	
 
 		    	wtr.write_record(None::<&[u8]>)?;
 
@@ -172,7 +189,10 @@ impl Localfile {
 		// write the records to the file
 	    records.into_iter().try_for_each(|record| {
 	    	
-	    	writer.append_value_ref(&record.get_avro_record()).unwrap();
+	    	match self.keep_headers {
+	    		true => writer.append_value_ref(&record.get_avro_record_with_headers()).unwrap(),
+	    		false => writer.append_value_ref(&record.get_avro_record()).unwrap(),
+	    	};
 	    	Ok::<(), std::io::Error>(())
 
 	    })?;
@@ -221,7 +241,13 @@ impl Localfile {
 		// loop through each record organising them into columns
 		for record in records {
 			
-			let record_json = record.get_record();
+			let record_json = match self.keep_headers {
+		    		
+	    		true => record.get_record_with_headers(),
+	    		
+	    		false => record.get_record(),
+
+	    	};
 
 			if let serde_json::Value::Object(record_json) = record_json {
 					

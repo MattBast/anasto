@@ -18,13 +18,14 @@ use std::convert::TryFrom;
 async fn setup(
     path: &'static str,
     filetype: String, 
+    keep_headers: bool,
 ) -> (tokio::sync::mpsc::UnboundedSender<Vec<domains::record::Record>>, tokio::task::JoinHandle<()>) {
     
     // create a mpsc channel to mock Anasto
     let (tx, rx) = mpsc::unbounded_channel();
 
     // create the subscriber and start it listening for records
-    let subscriber = Localfile::new("localfile_sub".to_string(), &PathBuf::from(path), filetype).unwrap();
+    let subscriber = Localfile::new("localfile_sub".to_string(), &PathBuf::from(path), filetype, keep_headers).unwrap();
     let handle = start_subscriber(Box::new(subscriber), rx, false).await.unwrap();
 
     (tx, handle)
@@ -117,7 +118,7 @@ fn assert_parquet_file(path: &'static str, expected_content: Vec<serde_json::Val
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn one_jsonl() {
     
-    let (tx, _handle) = setup("./test_tables/", String::from("jsonl")).await;
+    let (tx, _handle) = setup("./test_tables/", String::from("jsonl"), false).await;
 
     let records = test_records("test_table_one", 1);
     tx.send(records).unwrap();
@@ -138,7 +139,7 @@ async fn one_jsonl() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn two_jsonl() {
     
-    let (tx, _handle) = setup("./test_tables/", String::from("jsonl")).await;
+    let (tx, _handle) = setup("./test_tables/", String::from("jsonl"), false).await;
 
     let records = test_records("test_table_two", 2);
     tx.send(records).unwrap();
@@ -159,7 +160,7 @@ async fn two_jsonl() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn one_csv() {
     
-    let (tx, _handle) = setup("./test_tables/", String::from("csv")).await;
+    let (tx, _handle) = setup("./test_tables/", String::from("csv"), false).await;
 
     let records = test_records("test_table_three", 1);
     tx.send(records).unwrap();
@@ -181,7 +182,7 @@ async fn one_csv() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn two_csv() {
     
-    let (tx, _handle) = setup("./test_tables/", String::from("csv")).await;
+    let (tx, _handle) = setup("./test_tables/", String::from("csv"), false).await;
 
     let records = test_records("test_table_four", 2);
     tx.send(records).unwrap();
@@ -203,7 +204,7 @@ async fn two_csv() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn one_avro() {
     
-    let (tx, _handle) = setup("./test_tables/", String::from("avro")).await;
+    let (tx, _handle) = setup("./test_tables/", String::from("avro"), false).await;
 
     let records = test_records("test_table_five", 1);
     tx.send(records).unwrap();
@@ -230,7 +231,7 @@ async fn one_avro() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn one_parquet() {
     
-    let (tx, _handle) = setup("./test_tables/", String::from("parquet")).await;
+    let (tx, _handle) = setup("./test_tables/", String::from("parquet"), false).await;
 
     let records = test_records("test_table_six", 1);
     tx.send(records).unwrap();
@@ -248,6 +249,48 @@ async fn one_parquet() {
 
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn one_jsonl_with_headers() {
+    
+    let (tx, _handle) = setup("./test_tables/", String::from("jsonl"), true).await;
+
+    let records = test_records("test_table_seven", 1);
+    tx.send(records.clone()).unwrap();
+
+    let two_seconds = time::Duration::from_secs(2);
+    thread::sleep(two_seconds);
+
+
+    // get table files
+    let mut content = String::new();
+    let paths = std::fs::read_dir("./test_tables/test_table_seven/").unwrap();
+
+    for path in paths {
+        
+        let file_contents = std::fs::read_to_string(path.unwrap().path())
+            .expect("Should have been able to read the file");
+        
+        content.push_str(&file_contents);
+
+    }
+
+    let test_record: Record = serde_json::from_str(&content).unwrap();
+
+    assert_eq!(test_record.get_name(), records[0].get_name());
+    assert_eq!(test_record.get_type(), records[0].get_type());
+    assert_eq!(test_record.get_record(), records[0].get_record());
+    assert_eq!(test_record.get_raw_schema(), records[0].get_raw_schema());
+    assert_eq!(test_record.get_operation(), records[0].get_operation());
+
+    // teardown
+    std::fs::remove_dir_all("./test_tables/test_table_seven/").unwrap();
+
+}
+
+// ************************************************************************
+// add tests for keep headers
+// ************************************************************************
+
 // ************************************************************************
 // add tests for larger volumes of records and including more varied records.
 // could include more complex records such as integer, boolean and nested fields.
@@ -255,8 +298,4 @@ async fn one_parquet() {
 
 // ************************************************************************
 // add tests for bad config. The connector should throw an error.
-// ************************************************************************
-
-// ************************************************************************
-// add tests for keep headers
 // ************************************************************************
