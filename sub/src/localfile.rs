@@ -107,7 +107,7 @@ impl Localfile {
 	    records.into_iter().try_for_each(|record| {
 	    	
 	    	let line = match self.keep_headers {
-	    		true => format!("{:?}{}", record, "\n"),
+	    		true => format!("{}{}", record.get_record_with_headers(), "\n"),
 	    		false => format!("{}{}", record.get_record(), "\n"),
 	    	};
 	    	file.write_all(&line.into_bytes())?;

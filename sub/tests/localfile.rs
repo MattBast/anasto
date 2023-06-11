@@ -274,13 +274,13 @@ async fn one_jsonl_with_headers() {
 
     }
 
-    let test_record: Record = serde_json::from_str(&content).unwrap();
+    let test_record: serde_json::Value = serde_json::from_str(&content).unwrap();
 
-    assert_eq!(test_record.get_name(), records[0].get_name());
-    assert_eq!(test_record.get_type(), records[0].get_type());
-    assert_eq!(test_record.get_record(), records[0].get_record());
-    assert_eq!(test_record.get_raw_schema(), records[0].get_raw_schema());
-    assert_eq!(test_record.get_operation(), records[0].get_operation());
+    assert_eq!(test_record["table_name"], records[0].get_name());
+    assert_eq!(test_record["event_type"], records[0].get_type());
+    assert_eq!(test_record["record"], records[0].get_record());
+    assert_eq!(test_record["raw_schema"], records[0].get_raw_schema());
+    assert_eq!(test_record["operation"], records[0].get_operation());
 
     // teardown
     std::fs::remove_dir_all("./test_tables/test_table_seven/").unwrap();
