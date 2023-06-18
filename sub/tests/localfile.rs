@@ -343,6 +343,7 @@ async fn one_csv_with_headers() {
 
 }
 
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn one_avro_with_headers() {
     
@@ -376,9 +377,41 @@ async fn one_avro_with_headers() {
 
 }
 
-// ************************************************************************
-// add tests for keep headers
-// ************************************************************************
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn one_parquet_with_headers() {
+    
+    let (tx, _handle) = setup("./test_tables/", String::from("parquet"), true).await;
+
+    let records = test_records("test_table_ten", 1);
+    tx.send(records.clone()).unwrap();
+
+    let two_seconds = time::Duration::from_secs(2);
+    thread::sleep(two_seconds);
+
+    // define the string format that the created_at field will be in
+    let date_format = format_description::parse(
+        "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour sign:mandatory]:[offset_minute]:[offset_second]",
+    ).unwrap();
+
+    assert_parquet_file(
+        "./test_tables/test_table_ten/", 
+        Vec::from([
+            json!({
+                "table_name": format!("\"{}\"", records[0].get_name()),
+                "event_type": format!("\"{}\"", records[0].get_type()),
+                "record": format!("{{\"id\":\"0\",\"value\":\"0 value\"}}"),
+                "operation": format!("\"{}\"", records[0].get_operation()),
+                "created_at": format!("\"{}\"", records[0].get_created_at().format(&date_format).unwrap()),
+                "event_id": format!("\"{}\"", records[0].get_id())
+            })
+        ])
+    );
+
+    // teardown
+    std::fs::remove_dir_all("./test_tables/test_table_ten/").unwrap();
+
+}
 
 // ************************************************************************
 // add tests for larger volumes of records and including more varied records.
