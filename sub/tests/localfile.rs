@@ -343,6 +343,39 @@ async fn one_csv_with_headers() {
 
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn one_avro_with_headers() {
+    
+    let (tx, _handle) = setup("./test_tables/", String::from("avro"), true).await;
+
+    let records = test_records("test_table_nine", 1);
+    tx.send(records.clone()).unwrap();
+
+    let two_seconds = time::Duration::from_secs(2);
+    thread::sleep(two_seconds);
+
+    assert_avro_file(
+        "./test_tables/test_table_nine/", 
+        vec![
+            apache_avro::types::Value::Record(vec![
+                ("table_name".to_string(), apache_avro::types::Value::String(records[0].get_name())),
+                ("event_type".to_string(), apache_avro::types::Value::String(records[0].get_type())),
+                ("record".to_string(), apache_avro::types::Value::Record(vec![
+                    ("id".to_string(), apache_avro::types::Value::String("0".to_string())), 
+                    ("value".to_string(), apache_avro::types::Value::String("0 value".to_string()))
+                ])),
+                ("operation".to_string(), apache_avro::types::Value::String(records[0].get_operation())),
+                ("created_at".to_string(), apache_avro::types::Value::TimestampMicros((records[0].get_created_at().unix_timestamp_nanos()/1000).try_into().unwrap())),
+                ("event_id".to_string(), apache_avro::types::Value::Uuid(records[0].get_id())),
+            ])
+        ]
+    );
+
+    // teardown
+    std::fs::remove_dir_all("./test_tables/test_table_nine/").unwrap();
+
+}
+
 // ************************************************************************
 // add tests for keep headers
 // ************************************************************************

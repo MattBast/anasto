@@ -163,7 +163,10 @@ impl Localfile {
 	fn create_avro_records(&self, table_name: String, records: Vec<Record>) -> Result<String, std::io::Error> {
 
 		// get the schema from the first record in the vector
-		let schema = Schema::parse_str(&records[0].get_raw_schema()).unwrap();
+		let schema = match self.keep_headers {
+			true => Schema::parse_str(&records[0].get_raw_schema_with_headers()).unwrap(),
+    		false => Schema::parse_str(&records[0].get_raw_schema()).unwrap(),
+		};
 		let mut writer = AvroWriter::with_codec(&schema, Vec::new(), Codec::Snappy);
 
 		// write the records to the file

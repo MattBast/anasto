@@ -132,7 +132,6 @@ impl Record {
             ("table_name".to_string(), AvroValue::String(self.table_name.clone())),
             ("event_type".to_string(), AvroValue::String(self.event_type.clone())),
             ("record".to_string(), json_to_avro(&self.record)),
-            ("raw_schema".to_string(), AvroValue::String(self.raw_schema.clone())),
             ("operation".to_string(), AvroValue::String(self.operation.clone())),
             ("created_at".to_string(), AvroValue::TimestampMicros((self.created_at.unix_timestamp_nanos()/1000).try_into().unwrap())),
             ("event_id".to_string(), AvroValue::Uuid(self.event_id)),
@@ -144,6 +143,30 @@ impl Record {
     pub fn get_raw_schema(&self) -> String {
 
         self.raw_schema.clone()
+
+    }
+
+    /// Getter for the record field
+    pub fn get_raw_schema_with_headers(&self) -> String {
+
+        let schema = format!("{{ \
+          \"type\": \"record\", \
+          \"name\": \"{}_record\", \
+          \"fields\": [ \
+            {{\"name\": \"table_name\", \"type\": \"string\"}}, \
+            {{\"name\": \"event_type\", \"type\": \"string\"}}, \
+            {{\"name\": \"record\", \"type\": {}}}, \
+            {{\"name\": \"operation\", \"type\": \"string\"}}, \
+            {{\"name\": \"created_at\", \"type\": \"long\", \"logicalType\": \"timestamp-micros\"}}, \
+            {{\"name\": \"event_id\", \"type\": \"string\", \"logicalType\": \"uuid\"}} \
+          ] \
+        }}", self.table_name, self.raw_schema);
+
+        println!("{}", schema);
+
+        println!("{:?}", self.get_avro_record_with_headers().resolve(&AvroSchema::parse_str(&schema).unwrap()));
+
+        schema
 
     }
 
