@@ -4,12 +4,20 @@ use crate::sub_trait::Subscriber;
 use std::fs::{ create_dir_all, File };
 use std::io::{Error, ErrorKind, Write, LineWriter};
 use uuid::Uuid;
+
+// csv crates
 use csv::Writer as CsvWriter;
+use flatten_json_object::ArrayFormatting;
+use flatten_json_object::Flattener;
+use json_objects_to_csv::Json2Csv;
+
+// avro crates
 use apache_avro::Writer as AvroWriter;
 use apache_avro::Codec;
 use apache_avro::Schema;
 use std::sync::Arc;
 
+// parquet crates
 use arrow_array::{
 	// Int32Array, 
 	// Int64Array, 
@@ -22,6 +30,7 @@ use arrow_array::RecordBatch;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use std::collections::{HashMap};
+
 use log::{ 
 	info, 
 	error 
@@ -125,56 +134,27 @@ impl Localfile {
 	fn create_csv_records(&self, table_name: String, records: Vec<Record>) -> Result<String, std::io::Error> {
 
 		let file_path = format!("{}{}/{}.csv", self.dirpath_str, table_name, Uuid::new_v4());
-		let mut wtr = CsvWriter::from_path(&file_path)?;
-		let mut headers_written = false;
+		let csv_writer = CsvWriter::from_path(&file_path)?;
 
-		// write the records to the file
-	    records.into_iter().try_for_each(|record| {
-	    	
-	    	if !headers_written {
-	    		
-	    		match self.keep_headers {
-		    		
-		    		true => {
-		    			
-		    			record.get_record_with_headers().as_object().unwrap().keys().try_for_each(|key| {
-				    		wtr.write_field(key.as_str())?;
-				    		Ok::<(), std::io::Error>(())
-				    	})?;
+		let json_records: Vec<serde_json::Value> = match self.keep_headers {
 
-		    		},
-		    		
-		    		false => {
-		    			
-		    			record.get_record().as_object().unwrap().keys().try_for_each(|key| {
-				    		wtr.write_field(key.as_str())?;
-				    		Ok::<(), std::io::Error>(())
-				    	})?;
+			true => records.into_iter().map(|record| record.get_record_with_headers()).collect(),
+			false => records.into_iter().map(|record| record.get_record()).collect(),
+    	
+    	};
 
-		    		},
+		let flattener = Flattener::new()
+			.set_key_separator(".")
+		    .set_array_formatting(ArrayFormatting::Plain)
+		    .set_preserve_empty_arrays(true)
+		    .set_preserve_empty_objects(true);
 
-		    	};	
+		let write_result = Json2Csv::new(flattener).convert_from_array(&json_records, csv_writer);
 
-		    	wtr.write_record(None::<&[u8]>)?;
-
-		    	headers_written = true;
-		    	
-	    	}
-		    	
-
-	    	record.get_record().as_object().unwrap().values().try_for_each(|value| {
-	    		wtr.write_field(value.as_str().unwrap())?;
-	    		Ok::<(), std::io::Error>(())
-	    	})?;
-
-	    	wtr.write_record(None::<&[u8]>)?;
-	    	Ok::<(), std::io::Error>(())
-
-	    })?;
-
-	    wtr.flush()?;
-
-		Ok(file_path)
+		match write_result {
+			Ok(_) => Ok(file_path),
+			Err(error_message) => Err(Error::new(ErrorKind::Other, error_message))
+		}
 
 	}
 

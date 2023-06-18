@@ -14,6 +14,7 @@ use std::{ thread, time };
 
 use parquet::file::reader::SerializedFileReader;
 use std::convert::TryFrom;
+use ::time::format_description;
 
 async fn setup(
     path: &'static str,
@@ -260,7 +261,6 @@ async fn one_jsonl_with_headers() {
     let two_seconds = time::Duration::from_secs(2);
     thread::sleep(two_seconds);
 
-
     // get table files
     let mut content = String::new();
     let paths = std::fs::read_dir("./test_tables/test_table_seven/").unwrap();
@@ -279,11 +279,67 @@ async fn one_jsonl_with_headers() {
     assert_eq!(test_record["table_name"], records[0].get_name());
     assert_eq!(test_record["event_type"], records[0].get_type());
     assert_eq!(test_record["record"], records[0].get_record());
-    assert_eq!(test_record["raw_schema"], records[0].get_raw_schema());
     assert_eq!(test_record["operation"], records[0].get_operation());
 
     // teardown
     std::fs::remove_dir_all("./test_tables/test_table_seven/").unwrap();
+
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn one_csv_with_headers() {
+    
+    let (tx, _handle) = setup("./test_tables/", String::from("csv"), true).await;
+
+    let records = test_records("test_table_eight", 1);
+    tx.send(records.clone()).unwrap();
+
+    let two_seconds = time::Duration::from_secs(2);
+    thread::sleep(two_seconds);
+
+    // get table files
+    let mut content = String::new();
+    let paths = std::fs::read_dir("./test_tables/test_table_eight/").unwrap();
+
+    for path in paths {
+        
+        let file_contents = std::fs::read_to_string(path.unwrap().path())
+            .expect("Should have been able to read the file");
+        
+        content.push_str(&file_contents);
+
+    }
+
+    let lines: Vec<&str> = content.split("\n").collect();
+    let headers: Vec<&str> = lines[0].split(",").collect();
+    let values: Vec<&str> = lines[1].split(",").collect();
+    
+    assert_eq!(headers.len(), 7);
+    assert!(headers.contains(&"table_name"));
+    assert!(headers.contains(&"event_type"));
+    assert!(headers.contains(&"record.id"));
+    assert!(headers.contains(&"record.value"));
+    assert!(headers.contains(&"operation"));
+    assert!(headers.contains(&"event_id"));
+    assert!(headers.contains(&"created_at"));
+
+    assert_eq!(values.len(), 7);
+    assert!(values.contains(&records[0].get_name().as_str()));
+    assert!(values.contains(&records[0].get_type().as_str()));
+    assert!(values.contains(&"0"));
+    assert!(values.contains(&"0 value"));
+    assert!(values.contains(&records[0].get_operation().as_str()));
+    assert!(values.contains(&records[0].get_id().to_string().as_str()));
+
+    // define the string format that the created_at field will be in
+    let date_format = format_description::parse(
+        "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour sign:mandatory]:[offset_minute]:[offset_second]",
+    ).unwrap();
+
+    assert!(values.contains(&records[0].get_created_at().format(&date_format).unwrap().as_str()));
+
+    // teardown
+    std::fs::remove_dir_all("./test_tables/test_table_eight/").unwrap();
 
 }
 

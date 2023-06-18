@@ -1,11 +1,12 @@
 use serde_derive::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use time::{ OffsetDateTime, format_description };
 use uuid::Uuid;
 use apache_avro::{
     // to_value, 
     schema::Schema as AvroSchema, 
     types::Value as AvroValue
 };
+use serde_json::json;
 
 
 /// A record is a data change event representing a row of data
@@ -100,7 +101,20 @@ impl Record {
     /// Getter for the whole Record as a JSON object
     pub fn get_record_with_headers(&self) -> serde_json::Value {
 
-        serde_json::json!(self)
+        // change created_at to a string representation
+        let date_format = format_description::parse(
+            "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour sign:mandatory]:[offset_minute]:[offset_second]",
+        ).unwrap();
+        
+        json!({
+            "table_name": self.table_name,
+            "event_type": self.event_type,
+            "record": self.record,
+            "operation": self.operation,
+            "table_name": self.table_name,
+            "created_at": json!(self.created_at.format(&date_format).unwrap()),
+            "event_id": self.event_id,
+        })
 
     }
 
