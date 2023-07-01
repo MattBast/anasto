@@ -33,12 +33,9 @@ async fn setup(
 
 }
 
-// helper function to create records 
+// helper function that creates a standard collection of records
 fn test_records(table_name: &'static str, records_count: u32) -> Vec<Record> {
 
-    // ************************************************************************************
-    // take out this default and add some tests for none record schema types like strings and booleans
-    // ************************************************************************************
     let schema = format!("{{  \"type\": \"record\",\"name\": \"{}\",\"fields\": [{{\"name\": \"id\", \"type\": \"string\"}}, {{\"name\": \"value\", \"type\": \"string\"}}] }}", table_name);
 
     let mut test_records: Vec<Record> = Vec::with_capacity(records_count as usize);
@@ -410,6 +407,66 @@ async fn one_parquet_with_headers() {
 
     // teardown
     std::fs::remove_dir_all("./test_tables/test_table_ten/").unwrap();
+
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn one_nested_jsonl() {
+    
+    let (tx, _handle) = setup("./test_tables/", String::from("jsonl"), false).await;
+
+    let schema = json!({
+        "type": "record",
+        "name": "test_table_eleven",
+        "fields": [
+            {"name": "id", "type": "long"}, 
+            {"name": "values", "type": "record", "fields": [
+                {"name": "number", "type": "double"}, 
+                {"name": "text", "type": "string"}, 
+                {"name": "boolean", "type": "boolean"} 
+            ]}
+        ]
+    });
+
+    let records = Vec::from([
+        Record::new(
+            "test_table_eleven", 
+            json!({ 
+                "id": 1, "values": {
+                    "number": 1.0,
+                    "text": "hello world!",
+                    "boolean": true
+                }
+            }), 
+            &AvroSchema::parse(&schema).unwrap(), 
+            "CREATE".to_string()
+        ).unwrap(),
+        Record::new(
+            "test_table_eleven", 
+            json!({ 
+                "id": 2, "values": {
+                    "number": 2.0,
+                    "text": "hey world!",
+                    "boolean": false
+                }
+            }), 
+            &AvroSchema::parse(&schema).unwrap(), 
+            "CREATE".to_string()
+        ).unwrap()
+    ]);
+
+    tx.send(records).unwrap();
+
+    let two_seconds = time::Duration::from_secs(2);
+    thread::sleep(two_seconds);
+
+    assert_file(
+        "./test_tables/test_table_eleven/", 
+        "{\"id\":1,\"values\":{\"boolean\":true,\"number\":1.0,\"text\":\"hello world!\"}}\n{\"id\":2,\"values\":{\"boolean\":false,\"number\":2.0,\"text\":\"hey world!\"}}\n".to_string()
+    );
+
+    // teardown
+    std::fs::remove_dir_all("./test_tables/test_table_eleven/").unwrap();
 
 }
 
