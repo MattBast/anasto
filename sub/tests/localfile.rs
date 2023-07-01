@@ -73,7 +73,7 @@ fn assert_file(path: &'static str, expected_content: String) {
 }
 
 // helper function to read a schema file and check its contents
-fn assert_avro_file(path: &'static str, expected_content: Vec<apache_avro::types::Value>) {
+fn assert_avro_file(path: &'static str, expected_content: Vec<apache_avro::types::Value>, schema: Option<AvroSchema>) {
 
     let mut content = Vec::new();
     let paths = std::fs::read_dir(path).unwrap();
@@ -81,11 +81,18 @@ fn assert_avro_file(path: &'static str, expected_content: Vec<apache_avro::types
     for path in paths {
 
         let file = std::fs::File::open(path.unwrap().path()).unwrap();
+        let values  = match schema {
+            Some(ref schema) => Reader::with_schema(&schema, file).unwrap(),
+            None => Reader::new(file).unwrap()
+        };
 
-        for value in Reader::new(file).unwrap() {
+        for value in values {
             match value {
                 Ok(v) => content.push(v),
-                Err(e) => assert!(false, "{}", e.to_string()),
+                Err(e) => {
+                    println!("{:?}", e);
+                    assert!(false)
+                },
             };
         }
 
@@ -217,7 +224,8 @@ async fn one_avro() {
                 ("id".to_string(), apache_avro::types::Value::String("0".to_string())), 
                 ("value".to_string(), apache_avro::types::Value::String("0 value".to_string()))
             ])
-        ]
+        ],
+        None
     );
 
     // teardown
@@ -366,7 +374,8 @@ async fn one_avro_with_headers() {
                 ("created_at".to_string(), apache_avro::types::Value::TimestampMicros((records[0].get_created_at().unix_timestamp_nanos()/1000).try_into().unwrap())),
                 ("event_id".to_string(), apache_avro::types::Value::Uuid(records[0].get_id())),
             ])
-        ]
+        ],
+        None
     );
 
     // teardown
@@ -527,6 +536,82 @@ async fn one_nested_csv() {
 
     // teardown
     std::fs::remove_dir_all("./test_tables/test_table_twelve/").unwrap();
+
+}
+
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn one_nested_avro() {
+    
+    let (tx, _handle) = setup("./test_tables/", String::from("avro"), false).await;
+
+    let schema = json!({
+        "type": "record",
+        "name": "test_table_thirteen",
+        "fields": [
+            {"name": "id", "type": "long"}, 
+            {"name": "values", "type": "record", "fields": [
+                {"name": "number", "type": "double"}, 
+                {"name": "text", "type": "string"}
+            ]}
+        ]
+    });
+
+    let records = Vec::from([
+        Record::new(
+            "test_table_thirteen", 
+            json!({ 
+                "id": 1, 
+                "values": {
+                    "number": 1.0,
+                    "text": "hello world!"
+                }
+            }), 
+            &AvroSchema::parse(&schema).unwrap(), 
+            "CREATE".to_string()
+        ).unwrap(),
+        Record::new(
+            "test_table_thirteen", 
+            json!({ 
+                "id": 2, 
+                "values": {
+                    "number": 2.0,
+                    "text": "hey world!"
+                }
+            }), 
+            &AvroSchema::parse(&schema).unwrap(), 
+            "CREATE".to_string()
+        ).unwrap()
+    ]);
+
+    tx.send(records.clone()).unwrap();
+
+    let two_seconds = time::Duration::from_secs(2);
+    thread::sleep(two_seconds);
+
+    assert_avro_file(
+        "./test_tables/test_table_thirteen/", 
+        vec![
+            apache_avro::types::Value::Record(vec![
+                ("id".to_string(), apache_avro::types::Value::Long(1)), 
+                ("values".to_string(), apache_avro::types::Value::Record(vec![
+                    ("number".to_string(), apache_avro::types::Value::Double(1.0)), 
+                    ("text".to_string(), apache_avro::types::Value::String("hello world!".to_string()))
+                ]))
+            ]),
+            apache_avro::types::Value::Record(vec![
+                ("id".to_string(), apache_avro::types::Value::Long(2)), 
+                ("values".to_string(), apache_avro::types::Value::Record(vec![
+                    ("number".to_string(), apache_avro::types::Value::Double(2.0)), 
+                    ("text".to_string(), apache_avro::types::Value::String("hey world!".to_string()))
+                ]))
+            ])
+        ],
+        Some(AvroSchema::parse(&schema).unwrap())
+    );
+
+    // teardown
+    std::fs::remove_dir_all("./test_tables/test_table_thirteen/").unwrap();
 
 }
 
