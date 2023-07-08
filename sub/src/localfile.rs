@@ -19,13 +19,15 @@ use std::sync::Arc;
 
 // parquet crates
 use arrow_array::{
-	// Int32Array, 
-	// Int64Array, 
+	NullArray,
+	BooleanArray,
+	Float64Array,
+	Int64Array, 
 	// ListArray, 
 	// MapArray, 
 	StringArray, 
 	ArrayRef
-	};
+};
 use arrow_array::RecordBatch;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
@@ -219,7 +221,7 @@ impl Localfile {
 		
 		// a hashmap where each element is a column of values. 
 		// The key is the column name
-		let mut columns: HashMap<String, Vec<String>> = HashMap::new();
+		let mut columns: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
 
 		// loop through each record organising them into columns
 		for record in records {
@@ -239,7 +241,7 @@ impl Localfile {
 					// If this is the first time the loop has seen a column, create a key for it.
 					columns.entry(key.to_string()).or_insert_with(Vec::new);
 					// Then put the value in the column vector.
-					columns.get_mut(&key.to_string()).unwrap().push(record_json[key].to_string());
+					columns.get_mut(&key.to_string()).unwrap().push(record_json[key].clone());
 					
 				}
 
@@ -250,9 +252,59 @@ impl Localfile {
 		// merge the columns (vectors of values) into one vector of Parquet ArrayRefs
 		let mut record_batch = Vec::new();
 
+		// convert each column to a Parquet type and add it to the vector of Parquet ArrayRefs
 		for (key, values) in columns {
 			
-			record_batch.push((key, Arc::new(StringArray::from(values)) as ArrayRef));
+			match &values[0] {
+
+				serde_json::Value::Null => {
+
+					let null_values = NullArray::new(values.len());
+					record_batch.push((key, Arc::new(null_values) as ArrayRef));
+
+				},
+		        serde_json::Value::Bool(_) => {
+
+		        	let bool_values: BooleanArray = values.into_iter().map(|value| value.as_bool()).collect();
+		        	record_batch.push((key, Arc::new(bool_values) as ArrayRef));
+
+		        },
+		        serde_json::Value::Number(value) => {
+
+		        	if value.is_f64() {
+
+		        		let float_values: Float64Array = values.into_iter().map(|value| value.as_f64()).collect();
+		        		record_batch.push((key, Arc::new(float_values) as ArrayRef));
+
+		        	}
+		        	else {
+
+		        		let int_values: Int64Array = values.into_iter().map(|value| value.as_i64()).collect();
+		        		record_batch.push((key, Arc::new(int_values) as ArrayRef));
+
+		        	}
+
+		        },
+		        serde_json::Value::String(_) => {
+		        	
+		        	let string_values: Vec<String> = values.into_iter().map(|value| value.to_string()).collect();
+		        	record_batch.push((key, Arc::new(StringArray::from(string_values)) as ArrayRef));
+
+		        },
+		        serde_json::Value::Array(_) => {
+
+		        	let string_values: Vec<String> = values.into_iter().map(|value| value.to_string()).collect();
+		        	record_batch.push((key, Arc::new(StringArray::from(string_values)) as ArrayRef));
+
+		        },
+		        serde_json::Value::Object(_) => {
+
+		        	let string_values: Vec<String> = values.into_iter().map(|value| value.to_string()).collect();
+		        	record_batch.push((key, Arc::new(StringArray::from(string_values)) as ArrayRef));
+
+		        }
+
+			};
 
 		}
 
