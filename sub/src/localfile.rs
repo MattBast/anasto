@@ -24,7 +24,7 @@ use arrow_array::{
 	Float64Array,
 	Int64Array, 
 	// ListArray, 
-	// MapArray, 
+	// StructArray, 
 	StringArray, 
 	ArrayRef
 };
