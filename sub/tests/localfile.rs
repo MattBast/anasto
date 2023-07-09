@@ -615,11 +615,64 @@ async fn one_nested_avro() {
 
 }
 
-// ************************************************************************
-// add tests for larger volumes of records and including more varied records.
-// could include more complex records such as integer, boolean and nested fields.
-// ************************************************************************
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn one_nested_parquet() {
+    
+    let (tx, _handle) = setup("./test_tables/", String::from("parquet"), false).await;
 
-// ************************************************************************
-// add tests for bad config. The connector should throw an error.
-// ************************************************************************
+    let schema = json!({
+        "type": "record",
+        "name": "test_table_fourteen",
+        "fields": [
+            {"name": "id", "type": "long"}, 
+            {"name": "values", "type": "record", "fields": [
+                {"name": "number", "type": "double"}, 
+                {"name": "text", "type": "string"}
+            ]}
+        ]
+    });
+
+    let records = Vec::from([
+        Record::new(
+            "test_table_fourteen", 
+            json!({ 
+                "id": 1, 
+                "values": {
+                    "number": 1.0,
+                    "text": "hello world!"
+                }
+            }), 
+            &AvroSchema::parse(&schema).unwrap(), 
+            "CREATE".to_string()
+        ).unwrap(),
+        Record::new(
+            "test_table_fourteen", 
+            json!({ 
+                "id": 2, 
+                "values": {
+                    "number": 2.0,
+                    "text": "hey world!"
+                }
+            }), 
+            &AvroSchema::parse(&schema).unwrap(), 
+            "CREATE".to_string()
+        ).unwrap()
+    ]);
+
+    tx.send(records.clone()).unwrap();
+
+    let two_seconds = time::Duration::from_secs(2);
+    thread::sleep(two_seconds);
+
+    assert_parquet_file(
+        "./test_tables/test_table_fourteen/", 
+        Vec::from([
+            json!({"id":1, "values":"{\"number\":1.0,\"text\":\"hello world!\"}"}),
+            json!({"id":2, "values":"{\"number\":2.0,\"text\":\"hey world!\"}"})
+        ])
+    );
+
+    // teardown
+    std::fs::remove_dir_all("./test_tables/test_table_fourteen/").unwrap();
+
+}
