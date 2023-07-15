@@ -113,7 +113,7 @@ fn assert_parquet_file(path: &'static str, expected_content: Vec<serde_json::Val
         .flat_map(|r| r.into_iter());
 
     for row in rows {
-        content.push(row.to_json_value());
+        content.push(row.unwrap().to_json_value());
     }
 
     assert_eq!(content, expected_content);
@@ -247,7 +247,7 @@ async fn one_parquet() {
 
     assert_parquet_file(
         "./test_tables/test_table_six/", 
-        Vec::from([json!({"id":"\"0\"", "value":"\"0 value\""})])
+        Vec::from([json!({"id":"0", "value":"0 value"})])
     );
 
     // teardown
@@ -404,12 +404,12 @@ async fn one_parquet_with_headers() {
         "./test_tables/test_table_ten/", 
         Vec::from([
             json!({
-                "table_name": format!("\"{}\"", records[0].get_name()),
-                "event_type": format!("\"{}\"", records[0].get_type()),
-                "record": format!("{{\"id\":\"0\",\"value\":\"0 value\"}}"),
-                "operation": format!("\"{}\"", records[0].get_operation()),
-                "created_at": format!("\"{}\"", records[0].get_created_at().format(&date_format).unwrap()),
-                "event_id": format!("\"{}\"", records[0].get_id())
+                "table_name": format!("{}", records[0].get_name()),
+                "event_type": format!("{}", records[0].get_type()),
+                "record": {"id":"0","value":"0 value"},
+                "operation": format!("{}", records[0].get_operation()),
+                "created_at": format!("{}", records[0].get_created_at().format(&date_format).unwrap()),
+                "event_id": format!("{}", records[0].get_id())
             })
         ])
     );
@@ -667,8 +667,8 @@ async fn one_nested_parquet() {
     assert_parquet_file(
         "./test_tables/test_table_fourteen/", 
         Vec::from([
-            json!({"id":1, "values":"{\"number\":1.0,\"text\":\"hello world!\"}"}),
-            json!({"id":2, "values":"{\"number\":2.0,\"text\":\"hey world!\"}"})
+            json!({"id":1, "values":{"number":1.0,"text":"hello world!"}}),
+            json!({"id":2, "values":{"number":2.0,"text":"hey world!"}})
         ])
     );
 
