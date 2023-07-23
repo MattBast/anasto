@@ -1,11 +1,7 @@
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use domains::record::Record;
-use log::{ 
-    info, 
-    // warn, 
-    // error 
-};
+use log::error;
 
 /// Defines the shared behaviour for all subscribers as well as a default implementation
 /// for listening for events
@@ -38,8 +34,6 @@ pub async fn start_subscriber(
         // start listening for new Records that Anasto wants to be written to destination data stores
         while let Some(records) = rx.recv().await {
 
-            info!(target: "localfile", "Received {} records.", records.len());
-
             // if in upsert mode, split out the records into upsert and deletions
             if upsert {
     
@@ -47,14 +41,39 @@ pub async fn start_subscriber(
                     .into_iter()
                     .partition(|x| x.get_operation() == *"DELETE" );
 
-                subscriber.upsert_records(upserts).unwrap();
-                subscriber.delete_records(deletions).unwrap();
+                match subscriber.upsert_records(upserts) {
+                    
+                    Ok(_) => (),
+                    Err(error_message) => {
+                        error!(target: "subscribers", "A subscriber failed while upserting records with the error:\n{}", error_message);
+                        break
+                    },
+
+                };
+
+                match subscriber.delete_records(deletions) {
+                    
+                    Ok(_) => (),
+                    Err(error_message) => {
+                        error!(target: "subscribers", "A subscriber failed while deleting records with the error:\n{}", error_message);
+                        break
+                    },
+
+                };
 
             }
             // otherwise just write them as an event log
             else {
                 
-                subscriber.create_records(records).unwrap();
+                match subscriber.create_records(records) {
+                    
+                    Ok(_) => (),
+                    Err(error_message) => {
+                        error!(target: "subscribers", "A subscriber failed while creating records with the error:\n{}", error_message);
+                        break
+                    },
+
+                };
 
             }
 

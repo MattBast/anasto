@@ -39,7 +39,7 @@ async fn setup(
     // start Anasto
     tokio::spawn(async move {
         
-        let (api_tx, api, bus_tx, bus) = init(
+        let (api_tx, api, bus_tx, bus, _) = init(
             config_filepath.to_string(), 
             false
         ).await;
@@ -213,7 +213,8 @@ async fn post_record_creates_schema_and_sends_record_to_subscriber() {
             "table_name": "test_table",
             "event_type": "RECORD",
             "record": {"hello": "world"},
-            "operation": "CREATE"
+            "operation": "CREATE",
+            "raw_schema": "{\"name\":\"test_table\",\"type\":\"record\",\"fields\":[{\"name\":\"hello\",\"type\":\"string\"}]}",
         })
     );
 
@@ -250,7 +251,8 @@ async fn post_record_creates_schema_and_sends_record_to_subscriber() {
                 "table_name": "test_table",
                 "event_type": "RECORD",
                 "record": {"hello": "world"},
-                "operation": "CREATE"
+                "operation": "CREATE", 
+                "raw_schema": "{\"name\":\"test_table\",\"type\":\"record\",\"fields\":[{\"name\":\"hello\",\"type\":\"string\"}]}",
             })
         );
 
@@ -306,19 +308,22 @@ async fn posting_many_records_groups_them_into_one_buffer_per_table() {
                 "table_name": "table_one",
                 "event_type": "RECORD",
                 "record": {"id": "1"},
-                "operation": "CREATE"
+                "operation": "CREATE",
+                "raw_schema": "{\"name\":\"table_one\",\"type\":\"record\",\"fields\":[{\"name\":\"id\",\"type\":\"string\"}]}",
             },
             { 
                 "table_name": "table_one",
                 "event_type": "RECORD",
                 "record": {"id": "2"},
-                "operation": "CREATE"
+                "operation": "CREATE",
+                "raw_schema": "{\"name\":\"table_one\",\"type\":\"record\",\"fields\":[{\"name\":\"id\",\"type\":\"string\"}]}",
             },
             { 
                 "table_name": "table_one",
                 "event_type": "RECORD",
                 "record": {"id": "3"},
-                "operation": "CREATE"
+                "operation": "CREATE",
+                "raw_schema": "{\"name\":\"table_one\",\"type\":\"record\",\"fields\":[{\"name\":\"id\",\"type\":\"string\"}]}",
             }
         ])
     );
@@ -333,13 +338,15 @@ async fn posting_many_records_groups_them_into_one_buffer_per_table() {
                 "table_name": "table_two",
                 "event_type": "RECORD",
                 "record": {"id": "1"},
-                "operation": "CREATE"
+                "operation": "CREATE",
+                "raw_schema": "{\"name\":\"table_two\",\"type\":\"record\",\"fields\":[{\"name\":\"id\",\"type\":\"string\"}]}",
             },
             { 
                 "table_name": "table_two",
                 "event_type": "RECORD",
                 "record": {"id": "2"},
-                "operation": "CREATE"
+                "operation": "CREATE",
+                "raw_schema": "{\"name\":\"table_two\",\"type\":\"record\",\"fields\":[{\"name\":\"id\",\"type\":\"string\"}]}",
             }
         ])
     );

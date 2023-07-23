@@ -81,7 +81,7 @@ async fn post_record_returns_correct_keys() {
     let resp_body: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
 
     // and that the response body contains all five of the new events keys
-    assert_eq!(resp_body.as_object().unwrap().len(), 6);
+    assert_eq!(resp_body.as_object().unwrap().len(), 7);
 
     // and that the correct keys are included
     assert!(resp_body.as_object().unwrap().contains_key("table_name"));

@@ -1,35 +1,32 @@
 use std::path::Path;
 use domains::record::Record;
 use crate::sub_trait::Subscriber;
-use std::path::PathBuf;
 use std::fs::{ create_dir_all, File };
-use std::io::{Error, ErrorKind, Write, LineWriter};
+use std::io::{Error, ErrorKind, Write, LineWriter, BufReader};
 use uuid::Uuid;
+
+// csv crates
 use csv::Writer as CsvWriter;
+use flatten_json_object::ArrayFormatting;
+use flatten_json_object::Flattener;
+use json_objects_to_csv::Json2Csv;
+
+// avro crates
 use apache_avro::Writer as AvroWriter;
 use apache_avro::Codec;
 use apache_avro::Schema;
 use std::sync::Arc;
 
-
-// use tokio::runtime::Runtime;
-use arrow_array::{
-	// Int32Array, 
-	// Int64Array, 
-	// ListArray, 
-	// MapArray, 
-	StringArray, 
-	ArrayRef
-	};
+// parquet crates
 use arrow_array::RecordBatch;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
-use std::collections::{HashMap};
-// use log::{ 
-	// info, 
-	// warn, 
-	// error 
-// };
+use arrow_schema::{Schema as ArrowSchema, Field, DataType};
+
+use log::{ 
+	info, 
+	error 
+};
 
 
 /// A Subscriber that writes records to files in the local filesystem.
@@ -37,23 +34,34 @@ use std::collections::{HashMap};
 /// the data can be read into tables by other systems.
 #[derive(Debug)]
 pub struct Localfile {
+	
+	/// A unique name for the subscriber. This helps to identify the logs relating to this subscriber.
+	name: String,
+
 	/// The parent filepath where all data this Subscriber handles will
 	/// be written to
 	dirpath_str: String,
+	
 	/// The type of file to write. Defaults to JSON.
 	filetype: String,
+
+	/// If the user would like the Record event headers to be included in the write
+	keep_headers: bool,
+
 }
 
 impl Localfile {
 
 	/// Create a new localfile subscriber
 	pub fn new(
-		dirpath: &PathBuf, 
-		filetype: String, 
+		name: String,
+		dirpath: &Path, 
+		filetype: String,
+		keep_headers: bool, 
 	) -> Result<Localfile, std::io::Error> {
 		
 		// Convert the directory path into a string for easy access in future functions
-		let dirpath_str = match dirpath.clone().into_os_string().into_string() {
+		let dirpath_str = match dirpath.to_path_buf().into_os_string().into_string() {
 			
 			Ok(dirpath) => dirpath,
 			Err(_) => return Err(Error::new(ErrorKind::Other, "The dirpath did not contain valid unicode characters."))
@@ -61,10 +69,12 @@ impl Localfile {
 		};
 
 		// Create the Subscriber
-		let connector = Localfile { dirpath_str, filetype };
+		let connector = Localfile { name, dirpath_str, filetype, keep_headers };
 
 		// do a check that the dirpath is a directory and that it ends with a `/` char
 		connector.check_dirpath()?;
+
+		info!(target: &connector.name, "Initialised Localfile subscriber called {} writing {} type files to {}", &connector.name, connector.filetype, connector.dirpath_str);
 
 		Ok(connector)
 
@@ -88,15 +98,19 @@ impl Localfile {
 	}
 
 	// create a json file from a vector of records
-	fn create_json_records(&self, table_name: String, records: Vec<Record>) -> Result<(), std::io::Error> {
+	fn create_json_records(&self, table_name: String, records: Vec<Record>) -> Result<String, std::io::Error> {
 
 		let file_path = format!("{}{}/{}.jsonl", self.dirpath_str, table_name, Uuid::new_v4());
-		let file = File::create(file_path)?;
+		let file = File::create(&file_path)?;
 		let mut file = LineWriter::new(file);
 
 		// write the records to the file
 	    records.into_iter().try_for_each(|record| {
-	    	let line = format!("{}{}", record.get_record(), "\n");
+	    	
+	    	let line = match self.keep_headers {
+	    		true => format!("{}{}", record.get_record_with_headers(), "\n"),
+	    		false => format!("{}{}", record.get_record(), "\n"),
+	    	};
 	    	file.write_all(&line.into_bytes())?;
 
 	    	Ok::<(), std::io::Error>(())
@@ -104,162 +118,173 @@ impl Localfile {
 
 	    file.flush()?;
 
-		Ok(())
+		Ok(file_path)
 
 	}
 
 	// create a csv file from a vector of records
-	fn create_csv_records(&self, table_name: String, records: Vec<Record>) -> Result<(), std::io::Error> {
+	fn create_csv_records(&self, table_name: String, records: Vec<Record>) -> Result<String, std::io::Error> {
 
 		let file_path = format!("{}{}/{}.csv", self.dirpath_str, table_name, Uuid::new_v4());
-		let mut wtr = CsvWriter::from_path(file_path)?;
-		let mut headers_written = false;
+		let csv_writer = CsvWriter::from_path(&file_path)?;
 
-		// write the records to the file
-	    records.into_iter().try_for_each(|record| {
-	    	
-	    	if !headers_written {
-	    		
-	    		record.get_record().as_object().unwrap().keys().try_for_each(|key| {
-		    		wtr.write_field(key.as_str())?;
-		    		Ok::<(), std::io::Error>(())
-		    	})?;
+		let json_records: Vec<serde_json::Value> = match self.keep_headers {
 
-		    	wtr.write_record(None::<&[u8]>)?;
+			true => records.into_iter().map(|record| record.get_record_with_headers()).collect(),
+			false => records.into_iter().map(|record| record.get_record()).collect(),
+    	
+    	};
 
-		    	headers_written = true;
-		    	
-	    	}
-		    	
+		let flattener = Flattener::new()
+			.set_key_separator(".")
+		    .set_array_formatting(ArrayFormatting::Plain)
+		    .set_preserve_empty_arrays(true)
+		    .set_preserve_empty_objects(true);
 
-	    	record.get_record().as_object().unwrap().values().try_for_each(|value| {
-	    		wtr.write_field(value.as_str().unwrap())?;
-	    		Ok::<(), std::io::Error>(())
-	    	})?;
+		let write_result = Json2Csv::new(flattener).convert_from_array(&json_records, csv_writer);
 
-	    	wtr.write_record(None::<&[u8]>)?;
-	    	Ok::<(), std::io::Error>(())
-
-	    })?;
-
-	    wtr.flush()?;
-
-		Ok(())
+		match write_result {
+			Ok(_) => Ok(file_path),
+			Err(error_message) => Err(Error::new(ErrorKind::Other, error_message))
+		}
 
 	}
 
 
 	// create an avro file from a vector of records
-	fn create_avro_records(&self, table_name: String, records: Vec<Record>) -> Result<(), std::io::Error> {
+	fn create_avro_records(&self, table_name: String, records: Vec<Record>) -> Result<String, std::io::Error> {
 
-		// let schema = match self.schemas.read().await.get(&table_name) {
-		// 	Some(schema) => schema.schema.clone(),
-		// 	None => return Err(Error::new(ErrorKind::Other, "Table schema does not exist."))
-		// };
-
-		let schema = Schema::parse_str(&records[0].get_raw_schema()).unwrap();
+		// get the schema from the first record in the vector
+		let schema = match self.keep_headers {
+			true => Schema::parse_str(&records[0].get_raw_schema_with_headers()).unwrap(),
+    		false => Schema::parse_str(&records[0].get_raw_schema()).unwrap(),
+		};
 		let mut writer = AvroWriter::with_codec(&schema, Vec::new(), Codec::Snappy);
 
 		// write the records to the file
 	    records.into_iter().try_for_each(|record| {
 	    	
-	    	writer.append_value_ref(&record.get_avro_record()).unwrap();
+	    	match self.keep_headers {
+	    		true => writer.append_value_ref(&record.get_avro_record_with_headers()).unwrap(),
+	    		false => writer.append_value_ref(&record.get_avro_record()).unwrap(),
+	    	};
 	    	Ok::<(), std::io::Error>(())
 
 	    })?;
 
 		// create and write all content to the file
 	    let file_path = format!("{}{}/{}.avro", self.dirpath_str, table_name, Uuid::new_v4());
-	    std::fs::write(file_path, writer.into_inner().unwrap())?;
+	    std::fs::write(&file_path, writer.into_inner().unwrap())?;
 
-		Ok(())
+		Ok(file_path)
 
 	}
 
 
 	// create a parquet file from a vector of records
-	fn create_parquet_records(&self, table_name: String, records: Vec<Record>) -> Result<(), std::io::Error> {
+	fn create_parquet_records(&self, table_name: String, records: Vec<Record>) -> Result<String, std::io::Error> {
 
-		let batch = self.create_batch(records);
+		// re-arrange rows into columns and return as Parquet RecordBatch type
+		let batch = self.create_batch(&table_name, records);
 
+		// create a file for the batch
 		let file_path = format!("{}{}/{}.parquet", self.dirpath_str, &table_name, Uuid::new_v4());
 		let path = Path::new(&file_path);
+		let file = File::create(path).unwrap();
 
-		// let ids = Int32Array::from(vec![1, 2, 3, 4]);
-		// let vals = Int32Array::from(vec![5, 6, 7, 8]);
-		// let batch = RecordBatch::try_from_iter(vec![
-		// 	("id", Arc::new(ids) as ArrayRef),
-		// 	("val", Arc::new(vals) as ArrayRef),
-		// ]).unwrap();
-
-		let file = File::create(&path).unwrap();
-
-		// Default writer properties
+		// create a Parquet writer with the default properties
 		let props = WriterProperties::builder().build();
-
 		let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props)).unwrap();
 
+		// write the batch to the file
 		writer.write(&batch).expect("Writing batch");
 
-		// writer must be closed to write footer
+		// write the required Parquet footer to the file and close it
 		writer.close().unwrap();
 
-		Ok(())
+		Ok(file_path)
 
 	}
 
+	// re-arrange rows into columns and return as Parquet RecordBatch type
+    fn create_batch(&self, table_name: &String, records: Vec<Record>) -> RecordBatch {
+        
+        let json_records: Vec<serde_json::Value> = records.iter().map(|record| match self.keep_headers {
+    		true => record.get_record_with_headers(),
+    		false => record.get_record(),
+    	}).collect();
 
-	fn create_batch(&self, records: Vec<Record>) -> RecordBatch {
-		
-		let mut columns: HashMap<String, Vec<String>> = HashMap::new();
+        // look at the first json record and generate a parquet schema
+        let fields = discover_schema(json_records[0].clone(), "value".to_string());
+        let schema = Arc::new(ArrowSchema::new(fields));
 
-		for record in records {
-			
-			let record_json = record.get_record();
+        // write the json records as a temp file for the parquet conversion
+        let json_filepath = self.create_json_records(table_name.to_string(), records).unwrap();
+        let json_file = File::open(&json_filepath).unwrap();
 
-			match record_json {
-				
-				serde_json::Value::Object(record_json) => {
-					
-					for key in record_json.keys() {
-						
-						if !columns.contains_key(&key.to_string()) {
-			                columns.insert(key.to_string(), Vec::new());
-			            }
-						
-						columns.get_mut(&key.to_string()).unwrap().push(record_json[key].to_string());
-						
-					}
+        // use the schema and the json file to generate a parquet batch
+        let mut json = arrow_json::ReaderBuilder::new(schema).build(BufReader::new(json_file)).unwrap();
+        let batch = json.next().unwrap().unwrap();
 
-				},
-				
-				_ => ()
+        // cleanup temp json file
+        std::fs::remove_file(&json_filepath).unwrap();
 
-			};
+        batch
 
-		}
+    }
 
-		let mut record_batch = Vec::new();
+}
 
-		for (key, values) in columns {
-			
-			// let arrow_array = match values[0] {
-			// 	serde_json::Value::Null => StringArray::from(values),
-			//     serde_json::Value::Bool(_) => StringArray::from(values),
-			//     serde_json::Value::Number(_) => Int64Array::from(values),
-			//     serde_json::Value::String(_) => StringArray::from(values),
-			//     serde_json::Value::Array(_) => ListArray::from(values),
-			//     serde_json::Value::Object(_) => MapArray::from(values),
-			// };
+fn discover_schema(record: serde_json::Value, field_name: String) -> Vec<Field> {
 
-			record_batch.push((key, Arc::new(StringArray::from(values)) as ArrayRef));
+    match record {
 
-		}
+        serde_json::Value::Object(obj_record) => {
+            
+            let fields: Vec<Field> = obj_record.iter().map(|(key, value)| discover_field(value.clone(), key.to_string())).collect();
+            fields
 
-		// let vals = Int32Array::from(vec![5, 6, 7, 8]);
-		RecordBatch::try_from_iter(record_batch).unwrap()
+        },
+        _ => {
+            let field = discover_field(record, field_name);
+            vec![field]
+        }
 
-	}
+    }
+
+}
+
+fn discover_field(record: serde_json::Value, field_name: String) -> Field {
+
+    match record {
+
+        serde_json::Value::Null => Field::new(field_name, DataType::Null, true),
+        serde_json::Value::Bool(_) => Field::new(field_name, DataType::Boolean, true),
+        serde_json::Value::Number(number_record) => {
+            
+            if number_record.is_f64() {
+                Field::new(field_name, DataType::Float64, true)
+            }
+            else {
+                Field::new(field_name, DataType::Int64, true)
+            }
+
+        },
+        serde_json::Value::String(_) => Field::new(field_name, DataType::Utf8, true),
+        serde_json::Value::Array(arr_record) => {
+            
+            let array_field = discover_field(arr_record[0].clone(), field_name.clone());
+            Field::new(field_name, DataType::List(Arc::new(array_field)), true)
+
+        },
+        serde_json::Value::Object(obj_record) => {
+            
+            let fields: Vec<Field> = obj_record.iter().map(|(key, value)| discover_field(value.clone(), key.to_string())).collect();
+            Field::new(field_name, DataType::Struct(fields.into()), true)
+
+        }
+
+    }
 
 }
 
@@ -267,39 +292,57 @@ impl Subscriber for Localfile {
 
 	fn create_records(&self, records: Vec<Record>) -> Result<(), std::io::Error> {
 		
+		info!(target: &self.name, "Received {} records.", records.len());
+
 		// check if a directory for the table exists. If not, create it.
 		let table_name = records[0].get_name();
-		self.check_table(&table_name[..]).unwrap();
+		match self.check_table(&table_name[..]) {
+
+			Ok(_) => (),
+			Err(error) => {
+				error!(target: &self.name, "Failed to create the table {}", &table_name);
+				return Err(error)
+			},
+
+		};
 		
 		// check what type of file the user wants 
-		match self.filetype.to_lowercase().as_str() {
+		let write_result = match self.filetype.to_lowercase().as_str() {
+			
 			"jsonl" => self.create_json_records(table_name, records),
 			"csv" => self.create_csv_records(table_name, records),
 			"avro" => self.create_avro_records(table_name, records),
 			"parquet" => self.create_parquet_records(table_name, records),
 			_ => self.create_json_records(table_name, records),
-		}
 
+		};
+
+		match write_result {
+			
+			Ok(filepath) => {
+				info!(target: &self.name, "Wrote batch of records to {}", filepath);
+				Ok(())
+			},
+			Err(error) => {
+				error!(target: &self.name, "Failed to write batch of records");
+				Err(error)
+			},
+
+		}
 
 	}
 
 	fn upsert_records(&self, records: Vec<Record>) -> Result<(), std::io::Error> {
 		
-		// check if a directory for the table exists. If not, create it.
-		let table_name = records[0].get_name();
-		self.check_table(&table_name[..]).unwrap();
-
-		Ok(())
+		// there is no upsert mode for localfiles so just create the records
+		self.create_records(records)
 
 	}
 
 	fn delete_records(&self, records: Vec<Record>) -> Result<(), std::io::Error> {
 		
-		// check if a directory for the table exists. If not, create it.
-		let table_name = records[0].get_name();
-		self.check_table(&table_name[..]).unwrap();
-
-		Ok(())
+		// there is no delete mode for localfiles so just create the records
+		self.create_records(records)
 
 	}
 

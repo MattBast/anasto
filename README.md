@@ -72,7 +72,7 @@ flowchart LR
     destination_one[(source)]:::other_node;
 
     %% links
-    source_one-->sub-->anasto_api-->anasto_inner-->anasto_ws-->pub-->destination_one;
+    source_one-->pub-->anasto_api-->anasto_inner-->anasto_ws-->sub-->destination_one;
     
     %% styling
     style anasto fill:#1a1a1a,stroke:#1a1a1a,color:#ffffff;
@@ -82,6 +82,11 @@ flowchart LR
 
 ### Event based
 Anasto has been desgined to be an event driven system. That means that it is listening for events happening in source systems, translating them to data and passing them to destination systems who can write them in a way that makes sense to them.
+
+### Subscribers
+The term "subscriber" is borrowed from pub/sub systems liek Kafka, AWS Kinesis and GCP pub/sub because subscribers in Anasto behave in much the same way. They receive events from Anasto representing things like new records in source systems or schema changes on your tables of data and write these changes to a destination system. 
+
+At present there is only one pre-built subscriber called `Localfile`. This subscriber writes all records it receives to the localfile system of the machine that Anasto is running on in a format much like a data lake. It splits the records into one directory per schema so that the records are easy to read into tables by tools like [Python Pandas](https://pandas.pydata.org/) and [Polars](https://www.pola.rs/). For more information on how to configure this subscriber, see the config section of this [document](#config-file).
 
 ## Quickstart
 Make sure [Rust](https://www.rust-lang.org/tools/install) is installed on your machine. Then run the command `cargo run` from the root of this directory. This can take a moment if a new version of the programme needs building. Once it's done and running you should see some logs that look a little like this:
@@ -337,6 +342,18 @@ max_event_age = 120
 
 [schemas]
 url = './test_schemas/basic/'
+
+[[subscriber]]
+type = "Localfile"
+name = "my_jsonl_subscriber"
+dirpath = "./jsonl_destination/"
+filetype = "jsonl"
+
+[[subscriber]]
+type = "Localfile"
+name = "my_csv_subscriber"
+dirpath = "./csv_destination/"
+filetype = "csv"
 ```
 
 Here's a description of the fields you could include. Don't worry about missing any out. If you don't include a field it will revert to a default value:
@@ -350,6 +367,13 @@ Here's a description of the fields you could include. Don't worry about missing 
 | stream | max_memory | number | The records sent to Anasto will be grouped into small batches called buffers before they're sent to a subscriber. This field specifies the maximum number of bytes a buffer can include. Once the size is exceeded the buffer is drained and the records sent to all subscribers. Defaults to 1000000 bytes if not specified. |
 | stream | max_event_age | number | The records sent to Anasto will be grouped into small batches called buffers before they're sent to a subscriber. If a buffer never exceeds its `max_memory` or `max_event_age` if will be drained after the number of seconds specified here and the records sent to all subscribers. Defaults to 60 seconds if not specified. |
 | schemas | url | string | The record schemas by default will be stored in the directory `./schemas/`. You can specify another path here. |
+| subscriber | type | string | There will be many different types of subscribers available in the future. Each type describes what type of data storage you would like your data written to. At present the only value you can put here is `Localfile` as that is the only subscriber available. |
+| subscriber | name | string | A unique name to give to your subscriber. The logs related to this subscriber will be tagged with this value. |
+| subscriber | dirpath | string | Relates to the `Localfile` subscriber and defines where in your localfile system you would like Anasto to write files to. Although a string this value must be a correctly formatted directory path. Relative as well as absolute paths are allowed. |
+| subscriber | filetype | string | Relates to the `Localfile` subscriber and defines what type of file you would like to write to the location you defined in the `dirpath` field. The available filetypes are `jsonl`, `csv`, `avro` and `parquet`. |
+| subscriber | keep_headers | bool | Relates to the `Localfile` subscriber and defines whether you would like to keep the header fields when a record is written to a file. That is would you like to include the `table_name`, `event_type`, `operation`, `created_at` and `event_id` as well as the contents of the `record` itself. |
+
+Remember that if you are including a subscriber in your config you must enclose it in two square brackets like this `[[subscriber]]` and not single brackets like this `[subscriber]`. This is because you can include many subscribers in your config.
 
 
 ### Schema files

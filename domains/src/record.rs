@@ -1,11 +1,12 @@
 use serde_derive::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use time::{ OffsetDateTime, format_description };
 use uuid::Uuid;
 use apache_avro::{
     // to_value, 
     schema::Schema as AvroSchema, 
     types::Value as AvroValue
 };
+use serde_json::json;
 
 
 /// A record is a data change event representing a row of data
@@ -97,6 +98,26 @@ impl Record {
 
     }
 
+    /// Getter for the whole Record as a JSON object
+    pub fn get_record_with_headers(&self) -> serde_json::Value {
+
+        // change created_at to a string representation
+        let date_format = format_description::parse(
+            "[year]-[month]-[day] [hour]:[minute]:[second] [offset_hour sign:mandatory]:[offset_minute]:[offset_second]",
+        ).unwrap();
+        
+        json!({
+            "table_name": self.table_name,
+            "event_type": self.event_type,
+            "record": self.record,
+            "operation": self.operation,
+            "table_name": self.table_name,
+            "created_at": json!(self.created_at.format(&date_format).unwrap()),
+            "event_id": self.event_id,
+        })
+
+    }
+
     /// Getter for the record field converted to Avro format
     pub fn get_avro_record(&self) -> apache_avro::types::Value {
 
@@ -104,10 +125,48 @@ impl Record {
 
     }
 
+    /// Getter for the whole Record as an AVRO value
+    pub fn get_avro_record_with_headers(&self) -> apache_avro::types::Value {
+
+        AvroValue::Record(Vec::from([
+            ("table_name".to_string(), AvroValue::String(self.table_name.clone())),
+            ("event_type".to_string(), AvroValue::String(self.event_type.clone())),
+            ("record".to_string(), json_to_avro(&self.record)),
+            ("operation".to_string(), AvroValue::String(self.operation.clone())),
+            ("created_at".to_string(), AvroValue::TimestampMicros((self.created_at.unix_timestamp_nanos()/1000).try_into().unwrap())),
+            ("event_id".to_string(), AvroValue::Uuid(self.event_id)),
+        ]))
+
+    }
+
     /// Getter for the record field
     pub fn get_raw_schema(&self) -> String {
 
         self.raw_schema.clone()
+
+    }
+
+    /// Getter for the record field
+    pub fn get_raw_schema_with_headers(&self) -> String {
+
+        let schema = format!("{{ \
+          \"type\": \"record\", \
+          \"name\": \"{}_record\", \
+          \"fields\": [ \
+            {{\"name\": \"table_name\", \"type\": \"string\"}}, \
+            {{\"name\": \"event_type\", \"type\": \"string\"}}, \
+            {{\"name\": \"record\", \"type\": {}}}, \
+            {{\"name\": \"operation\", \"type\": \"string\"}}, \
+            {{\"name\": \"created_at\", \"type\": \"long\", \"logicalType\": \"timestamp-micros\"}}, \
+            {{\"name\": \"event_id\", \"type\": \"string\", \"logicalType\": \"uuid\"}} \
+          ] \
+        }}", self.table_name, self.raw_schema);
+
+        println!("{}", schema);
+
+        println!("{:?}", self.get_avro_record_with_headers().resolve(&AvroSchema::parse_str(&schema).unwrap()));
+
+        schema
 
     }
 
@@ -175,7 +234,7 @@ fn json_to_avro(json: &serde_json::Value) -> AvroValue {
             
             let avro_value_array: Vec<AvroValue> = value
                 .iter()
-                .map(|value| json_to_avro(value))
+                .map(json_to_avro)
                 .collect();
 
             AvroValue::Array(avro_value_array)

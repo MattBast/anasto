@@ -195,12 +195,7 @@ impl Repo {
 	/// Get the schema for a specified table in the repo
 	pub fn get_all(&self) -> Vec<Schema> {
 
-		self
-			.schemas
-			.values()
-			.into_iter()
-			.map(|schema| schema.clone())
-			.collect()
+		self.schemas.values().cloned().collect()
 
 	}
 
