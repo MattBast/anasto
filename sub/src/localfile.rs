@@ -2,7 +2,7 @@ use std::path::Path;
 use domains::record::Record;
 use crate::sub_trait::Subscriber;
 use std::fs::{ create_dir_all, File };
-use std::io::{Error, ErrorKind, Write, LineWriter};
+use std::io::{Error, ErrorKind, Write, LineWriter, BufReader};
 use uuid::Uuid;
 
 // csv crates
@@ -18,20 +18,10 @@ use apache_avro::Schema;
 use std::sync::Arc;
 
 // parquet crates
-use arrow_array::{
-	NullArray,
-	BooleanArray,
-	Float64Array,
-	Int64Array, 
-	// ListArray, 
-	StructArray, 
-	StringArray, 
-	ArrayRef
-};
 use arrow_array::RecordBatch;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
-use std::collections::{HashMap};
+use arrow_schema::{Schema as ArrowSchema, Field, DataType};
 
 use log::{ 
 	info, 
@@ -195,12 +185,7 @@ impl Localfile {
 	fn create_parquet_records(&self, table_name: String, records: Vec<Record>) -> Result<String, std::io::Error> {
 
 		// re-arrange rows into columns and return as Parquet RecordBatch type
-		let json_records = records.iter().map(|record| match self.keep_headers {
-    		true => record.get_record_with_headers(),
-    		false => record.get_record(),
-    	}).collect();
-			
-		let batch = self.create_batch(json_records);
+		let batch = self.create_batch(&table_name, records);
 
 		// create a file for the batch
 		let file_path = format!("{}{}/{}.parquet", self.dirpath_str, &table_name, Uuid::new_v4());
@@ -222,113 +207,84 @@ impl Localfile {
 	}
 
 	// re-arrange rows into columns and return as Parquet RecordBatch type
-	fn create_batch(&self, records: Vec<serde_json::Value>) -> RecordBatch {
-	    
-	    let columns = self.transpose(records);
-	    self.parse(columns)
+    fn create_batch(&self, table_name: &String, records: Vec<Record>) -> RecordBatch {
+        
+        let json_records: Vec<serde_json::Value> = records.iter().map(|record| match self.keep_headers {
+    		true => record.get_record_with_headers(),
+    		false => record.get_record(),
+    	}).collect();
 
-	}
+        // look at the first json record and generate a parquet schema
+        let fields = discover_schema(json_records[0].clone(), "value".to_string());
+        let schema = Arc::new(ArrowSchema::new(fields));
 
+        // write the json records as a temp file for the parquet conversion
+        let json_filepath = self.create_json_records(table_name.to_string(), records).unwrap();
+        let json_file = File::open(&json_filepath).unwrap();
 
-	// transpose an array of rows into a hashmap where the key represents column names 
-	// and the values are arrays of the column values
-	fn transpose(&self, records: Vec<serde_json::Value>) -> HashMap<String, Vec<serde_json::Value>> {
+        // use the schema and the json file to generate a parquet batch
+        let mut json = arrow_json::ReaderBuilder::new(schema).build(BufReader::new(json_file)).unwrap();
+        let batch = json.next().unwrap().unwrap();
 
-	    // a hashmap where each element is a column of values. 
-	    // The key is the column name
-	    let mut columns: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
+        // cleanup temp json file
+        std::fs::remove_file(&json_filepath).unwrap();
 
-	    // loop through each record organising them into columns
-	    for record in records {
+        batch
 
-	        if let serde_json::Value::Object(record) = record {
-	                
-	            for key in record.keys() {
-	                
-	                // If this is the first time the loop has seen a column, create a key for it.
-	                columns.entry(key.to_string()).or_insert_with(Vec::new);
-	                // Then put the value in the column vector.
-	                columns.get_mut(&key.to_string()).unwrap().push(record[key].clone());
-	                
-	            }
+    }
 
-	        };
+}
 
-	    }
+fn discover_schema(record: serde_json::Value, field_name: String) -> Vec<Field> {
 
-	    columns
+    match record {
 
-	}
+        serde_json::Value::Object(obj_record) => {
+            
+            let fields: Vec<Field> = obj_record.iter().map(|(key, value)| discover_field(value.clone(), key.to_string())).collect();
+            fields
 
-	// convert columns of json values into Parquet arrays
-	fn parse(&self, columns: HashMap<String, Vec<serde_json::Value>>) -> RecordBatch {
+        },
+        _ => {
+            let field = discover_field(record, field_name);
+            vec![field]
+        }
 
-	    // merge the columns (vectors of values) into one vector of Parquet ArrayRefs
-	    let mut record_batch = Vec::new();
+    }
 
-	    // convert each column to a Parquet type and add it to the vector of Parquet ArrayRefs
-	    for (key, values) in columns {
-	        
-	        match &values[0] {
+}
 
-	            serde_json::Value::Null => {
+fn discover_field(record: serde_json::Value, field_name: String) -> Field {
 
-	                let null_values = NullArray::new(values.len());
-	                record_batch.push((key, Arc::new(null_values) as ArrayRef));
+    match record {
 
-	            },
-	            serde_json::Value::Bool(_) => {
+        serde_json::Value::Null => Field::new(field_name, DataType::Null, true),
+        serde_json::Value::Bool(_) => Field::new(field_name, DataType::Boolean, true),
+        serde_json::Value::Number(number_record) => {
+            
+            if number_record.is_f64() {
+                Field::new(field_name, DataType::Float64, true)
+            }
+            else {
+                Field::new(field_name, DataType::Int64, true)
+            }
 
-	                let bool_values: BooleanArray = values.into_iter().map(|value| value.as_bool()).collect();
-	                record_batch.push((key, Arc::new(bool_values) as ArrayRef));
+        },
+        serde_json::Value::String(_) => Field::new(field_name, DataType::Utf8, true),
+        serde_json::Value::Array(arr_record) => {
+            
+            let array_field = discover_field(arr_record[0].clone(), field_name.clone());
+            Field::new(field_name, DataType::List(Arc::new(array_field)), true)
 
-	            },
-	            serde_json::Value::Number(value) => {
+        },
+        serde_json::Value::Object(obj_record) => {
+            
+            let fields: Vec<Field> = obj_record.iter().map(|(key, value)| discover_field(value.clone(), key.to_string())).collect();
+            Field::new(field_name, DataType::Struct(fields.into()), true)
 
-	                if value.is_f64() {
+        }
 
-	                    let float_values: Float64Array = values.into_iter().map(|value| value.as_f64()).collect();
-	                    record_batch.push((key, Arc::new(float_values) as ArrayRef));
-
-	                }
-	                else {
-
-	                    let int_values: Int64Array = values.into_iter().map(|value| value.as_i64()).collect();
-	                    record_batch.push((key, Arc::new(int_values) as ArrayRef));
-
-	                }
-
-	            },
-	            serde_json::Value::String(_) => {
-	                
-	                let string_values: Vec<String> = values.into_iter().map(|value| value.as_str().unwrap().into()).collect();
-	                record_batch.push((key, Arc::new(StringArray::from(string_values)) as ArrayRef));
-
-	            },
-	            serde_json::Value::Array(_) => {
-
-	                let string_values: Vec<String> = values.into_iter().map(|value| value.to_string()).collect();
-	                record_batch.push((key, Arc::new(StringArray::from(string_values)) as ArrayRef));
-
-	            },
-	            serde_json::Value::Object(_) => {
-
-	                // let string_values: Vec<String> = values.into_iter().map(|value| value.to_string()).collect();
-	                let nested_columns = self.transpose(values);
-	                let nested_record_batch = self.parse(nested_columns);
-	                let struct_array: StructArray = nested_record_batch.into();
-	                record_batch.push((key, Arc::new(struct_array) as ArrayRef));
-
-	            }
-
-	        };
-
-	    }
-
-	    // change type from vector to Parquet RecordBatch and return the batch
-	    RecordBatch::try_from_iter(record_batch).unwrap()
-
-	}
+    }
 
 }
 

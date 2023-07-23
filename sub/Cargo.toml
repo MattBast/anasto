@@ -17,6 +17,8 @@ csv = "1.2.1"
 apache-avro = { version = "0.14", features = ["snappy"] }
 parquet = { version = "43.0", features = ["json", "snap", "arrow"] }
 arrow-array = "43.0"
+arrow-json = "43.0"
+arrow-schema = "43.0"
 flatten-json-object = "0.6.1"
 json-objects-to-csv = "0.1.3"
 

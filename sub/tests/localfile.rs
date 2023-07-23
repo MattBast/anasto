@@ -676,3 +676,59 @@ async fn one_nested_parquet() {
     std::fs::remove_dir_all("./test_tables/test_table_fourteen/").unwrap();
 
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn one_parquet_with_list_field() {
+    
+    let (tx, _handle) = setup("./test_tables/", String::from("parquet"), false).await;
+
+    let schema = json!({
+        "type": "record",
+        "name": "test_table_fourteen",
+        "fields": [
+            {"name": "id", "type": "long"}, 
+            {"name": "str_list", "type": "array", "items": "string", "default": []},
+            {"name": "double_list", "type": "array", "items": "double", "default": []}
+        ]
+    });
+
+    let records = Vec::from([
+        Record::new(
+            "test_table_fifteen", 
+            json!({ 
+                "id": 1, 
+                "str_list": ["hello", "world"],
+                "double_list": [1.0, 2.0]
+            }), 
+            &AvroSchema::parse(&schema).unwrap(), 
+            "CREATE".to_string()
+        ).unwrap(),
+        Record::new(
+            "test_table_fifteen", 
+            json!({ 
+                "id": 2, 
+                "str_list": ["hey", "you"],
+                "double_list": [3.0, 4.0]
+            }), 
+            &AvroSchema::parse(&schema).unwrap(), 
+            "CREATE".to_string()
+        ).unwrap()
+    ]);
+
+    tx.send(records.clone()).unwrap();
+
+    let two_seconds = time::Duration::from_secs(2);
+    thread::sleep(two_seconds);
+
+    assert_parquet_file(
+        "./test_tables/test_table_fifteen/", 
+        Vec::from([
+            json!({"id":1, "str_list":["hello", "world"], "double_list": [1.0, 2.0]}),
+            json!({"id":2, "str_list":["hey", "you"], "double_list": [3.0, 4.0]})
+        ])
+    );
+
+    // teardown
+    std::fs::remove_dir_all("./test_tables/test_table_fifteen/").unwrap();
+
+}
