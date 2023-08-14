@@ -9,6 +9,7 @@ pub mod logger;
 pub mod config;
 pub mod poll;
 
+/// Start Anasto
 pub async fn start() {
 	logger::start();
 	let config = config::get();

@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 /// Return an error if the string provided is more than 500 characters long
 pub fn five_hundred_chars_check<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
 
-	let mut s = String::deserialize(d)?;
+	let s = String::deserialize(d)?;
 
     if &s.chars().count() > &500 {
         let error_message = format!("The string: {} is longer than 500 chars.", &s);
@@ -36,7 +36,7 @@ pub fn random_table_name() -> String {
 /// Check that the path provided points at a directory
 pub fn path_dir_check<'de, D: Deserializer<'de>>(d: D) -> Result<PathBuf, D::Error> {
 
-	let mut s = String::deserialize(d)?;
+	let s = String::deserialize(d)?;
 	let dirpath = PathBuf::from(&s);
 
     if !dirpath.exists() {

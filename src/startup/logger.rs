@@ -4,6 +4,7 @@
 
 use std::env;
 
+/// Start logger so the other modules can produce logs
 pub fn start() {
 
     if env::var_os("RUST_LOG").is_none() {

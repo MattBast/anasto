@@ -7,7 +7,7 @@
 //! - Each SourceTable variant is defined in it's own sub-module
 //! - Sub-modules also define the configuration logic for each table
 
-// standard, tokio and datafusion crates 
+// standard, dashmap, tokio and datafusion crates 
 use log::{ info, error };
 use std::io::{ Error, ErrorKind };
 use serde_derive::Deserialize;
@@ -78,7 +78,7 @@ impl SourceTable {
         loop {
             
             // Wait for the tick before triggering the poll action
-            interval.tick().await;
+            let _ = interval.tick().await;
             
             // trigger the designated action
             match self.read_new_data().await {
@@ -153,6 +153,7 @@ impl SourceTable {
         &self, 
         catalog: Arc<DashMap<String, (Option<DFSchema>, Vec<UnboundedSender<DataFrame>>)>>,
     ) -> Result<(), Error> {
+        
         let entry = (None, Vec::new());
         match catalog.insert(self.table_name().clone(), entry) {
             None => {
@@ -165,6 +166,7 @@ impl SourceTable {
                 return Err(Error::new(ErrorKind::Other, error_message));
             }
         }
+        
     }
 
     /// The logic per table type for reading new data from source

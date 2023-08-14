@@ -1,6 +1,6 @@
-use crate::start;
+use anasto::start;
 
 #[tokio::main]
-fn main() {
-    start();
+async fn main() {
+    start().await;
 }

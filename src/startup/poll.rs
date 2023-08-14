@@ -11,25 +11,27 @@ use datafusion::common::DFSchema;
 use datafusion::prelude::DataFrame;
 use tokio::sync::mpsc::UnboundedSender;
 
+/// Start the source tables polling their source datasets and the destination tables
+/// listening for new data from the sources
 pub async fn start(
 	config: Config,
 	catalog: Arc<DashMap<String, (Option<DFSchema>, Vec<UnboundedSender<DataFrame>>)>>
 ) {
 
-	let handles = Vec::new();
+	let mut handles = Vec::new();
 
-	for table in config.source_table {
-		let handle = table.start(catalog.clone());
+	for mut table in config.source_table {
+		let handle = table.start(catalog.clone()).await;
 		handles.push(handle);
 	}
 
-	for table in config.dest_table {
-		let handle = table.start();
+	for mut table in config.dest_table {
+		let handle = table.start(catalog.clone()).await;
 		handles.push(handle);
 	}
 
 	for handle in handles {
-		handle.await;
+		let _ = handle.await;
 	}
 
 }

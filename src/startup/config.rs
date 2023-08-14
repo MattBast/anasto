@@ -9,7 +9,7 @@ use log::info;
 use std::env;
 use std::io::ErrorKind;
 use std::fs::read_to_string;
-use serde_derive::{Deserialize};
+use serde_derive::Deserialize;
 use std::path::PathBuf;
 
 use crate::tables::{ source_tables::SourceTable, dest_tables::DestTable };
@@ -44,7 +44,7 @@ pub fn get() -> Config {
                 config
 
             },
-            Err(error) => panic!("Got error while trying to parse {}", &filepath)
+            Err(error) => panic!("Got error {} while trying to parse {}", error, &filepath)
 
         },
         Err(error) => match error.kind() {
@@ -68,7 +68,7 @@ fn get_config_filepath() -> String {
         panic!("Could not find a filepath in the first argument. Try running something like `anasto config.toml`.")
     }
 
-    let filepath = PathBuf::from(args[1]);
+    let filepath = PathBuf::from(args[1].clone());
 
     if !filepath.exists() {
         panic!("The filepath: {} does not exist.", args[1]);
