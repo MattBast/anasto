@@ -1,11 +1,17 @@
-[workspace]
-members = [
-	"main",
-	"entrypoints",
-	"domains",
-	"bus",
-	"handlers",
-	"repos",
-	"config",
-	"sub"
-]
+[package]
+name = "anasto"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+pretty_env_logger = "0.4"
+log = "0.4"
+toml = "0.7.3"
+serde = "1.0"
+serde_derive = "1.0"
+datafusion = "28.0.0"
+dashmap = "5.5.0"
+random_name_generator = "0.3.5"
+convert_case = "0.6.0"
+time = "0.3.25"
