@@ -24,7 +24,7 @@ pub struct Config {
 
    /// the destination tables that get all changes from a specifc source table
    /// and write to a specified destination
-   pub dest_table: Vec<DestTable>,
+   pub destination_table: Vec<DestTable>,
 
 }
 

@@ -108,37 +108,20 @@ impl SourceOpenTable {
 	/// function and return a dataframe.
 	async fn read_delta(&self, ctx: &SessionContext) -> Result<DataFrame, std::io::Error> {
 		
+		// **********************************************************************
+		// add logic to read full tablr on first pass and cdc on all passes after that
+		// **********************************************************************
 		let table = deltalake::open_table(self.dirpath.to_str().unwrap()).await.unwrap();
-
-		// Create a delta operations client pointing at an un-initialized in-memory location.
-	    // In a production environment this would be created with "try_new" and point at
-	    // a real storage location.
-	    // let table_uri = self.dirpath.to_str().unwrap();
-	    // let ops = deltalake::DeltaOps::try_from_uri(table_uri).await.unwrap();
-
-	    // let columns = vec![
-	    //     deltalake::SchemaField::new(
-	    //         String::from("id"),
-	    //         deltalake::SchemaDataType::primitive(String::from("integer")),
-	    //         false,
-	    //         Default::default(),
-	    //     )
-	    // ];
-
-	    // The operations module uses a builder pattern that allows specifying several options
-	    // on how the command behaves. The builders implement `Into<Future>`, so once
-	    // options are set you can run the command using `.await`.
-	    // let table = ops
-	    //     .create()
-	    //     .with_columns(columns)
-	    //     .with_table_name(self.table_name.clone())
-	    //     .with_configuration_property(deltalake::delta_config::DeltaConfigKey::EnableChangeDataFeed, Some("true"))
-	    //     .await
-	    //     .unwrap();
-
 	    let df = ctx.read_table(Arc::new(table)).unwrap();
 
-	    println!("{:?}", df.schema());
+	    // **********************************************************************
+	    // add logic to pickup file paths using bookmark and created timestamp
+	    // also log a warning if change data can't be found
+	    // **********************************************************************
+	    let cdc_path = format!("{}/{}", self.dirpath.display(), "_change_data");
+	    let cdc_df = ctx.read_parquet(cdc_path, Default::default()).await?;
+
+	    println!("{:?}", cdc_df.show().await?);
 
 		Ok(df)
 

@@ -111,7 +111,7 @@ impl DestTable {
             },
 
             Entry::Vacant(_) => {
-                let error_message = format!("Source table could not be found in catalog {}.", self.src_table_name());
+                let error_message = format!("Source table {} could not be found in catalog.", self.src_table_name());
                 error!(target: self.dest_table_name(), "{}", &error_message);
                 Err(Error::new(ErrorKind::Other, error_message))
             },

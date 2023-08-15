@@ -14,13 +14,12 @@ use crate::tables::utils::{
 	five_hundred_chars_check, 
 	random_table_name, 
 	path_dir_check,
-	start_of_time_timestamp,
-	system_time_to_string
+	start_of_time_timestamp
 };
 use datafusion::prelude::DataFrame;
 use datafusion::error::Result;
 use convert_case::{ Case, Casing };
-
+use uuid::Uuid;
 
 /// The DestFile reads files from a local or remote filesystem
 #[derive(Debug, Deserialize, Clone)]
@@ -33,7 +32,7 @@ pub struct DestFile {
 
 	/// The name of the source table that supplies this destination table
     #[serde(deserialize_with="five_hundred_chars_check", default="random_table_name")]
-	pub src_table_name: String,
+	pub source_table_name: String,
 
 	/// The parent filepath where all data this DestFile handles will be written to
     #[serde(deserialize_with="path_dir_check")]
@@ -71,7 +70,7 @@ impl DestFile {
 
 	/// Get the name of the source table that supplies this destination
     pub fn src_table_name(&self) -> &String {
-		&self.src_table_name
+		&self.source_table_name
 	}
 
 	/// Getter function for returning what to do if this table fails to read new data
@@ -84,20 +83,25 @@ impl DestFile {
 	/// boolean telling the destinations not to process it.
 	pub async fn write_new_data(&mut self, df: DataFrame) -> Result<(), Error> {
 
-		info!(target: &self.dest_table_name, "Reading files from {} created before {:?}.", self.dirpath.display(), system_time_to_string(self.bookmark));
+		// generate unique name for the new file
+		let filepath = format!("{}/{}", self.dirpath.display(), Uuid::new_v4());
 
-		// create the dataframe
+		// make sure the directory for the table exists
+		std::fs::create_dir_all(&self.dirpath)?;
+
+		info!(target: &self.dest_table_name, "Writing files to {}.", &filepath);
+
+		// write the dataframe to file
 		match self.filetype {
-			LakeFileType::Csv => df.write_csv(self.dirpath.to_str().unwrap()).await?,
-			LakeFileType::Json => df.write_json(self.dirpath.to_str().unwrap()).await?,
+			LakeFileType::Csv => df.write_csv(&filepath).await?,
+			LakeFileType::Json => df.write_json(&filepath).await?,
 			// ************************************************************************************************
 			// switch to Avro write method once one exists
 			// ************************************************************************************************
-			LakeFileType::Avro => df.write_json(self.dirpath.to_str().unwrap()).await?,
-			LakeFileType::Parquet => df.write_parquet(self.dirpath.to_str().unwrap(), Default::default()).await?,
+			LakeFileType::Avro => df.write_json(&filepath).await?,
+			LakeFileType::Parquet => df.write_parquet(&filepath, Default::default()).await?,
 		};
 
-		// update the bookmark so the same files aren't read twice
         self.bookmark = SystemTime::now();
 
 		Ok(())

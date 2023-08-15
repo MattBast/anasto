@@ -1,10 +1,10 @@
 [[source_table]]
-type = "Lake"
+type = "Files"
 table_name = "csv_table"
 dirpath = "./tests/data/csv_table/"
 
 [[destination_table]]
-type = "Lake"
+type = "Files"
 source_table_name = "csv_table"
 dest_table_name = "json_table"
 dirpath = "./tests/data/json_table/"
@@ -16,7 +16,7 @@ table_name = "delta_table"
 dirpath = "./tests/data/delta_table/"
 
 [[destination_table]]
-type = "Lake"
+type = "Files"
 source_table_name = "delta_table"
 dest_table_name = "delta_as_csv_table"
 dirpath = "./tests/data/delta_as_csv_table/"

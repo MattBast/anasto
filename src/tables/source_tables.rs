@@ -22,7 +22,7 @@ use tokio::time::{ interval, Interval };
 use tokio::sync::mpsc::UnboundedSender;
 
 // crates from the internal tables module
-use crate::tables::source_files::SourceLake;
+use crate::tables::source_files::SourceFiles;
 use crate::tables::source_open_table::SourceOpenTable;
 use crate::tables::FailAction;
 
@@ -32,7 +32,7 @@ use crate::tables::FailAction;
 pub enum SourceTable {
    
    /// This source table reads files from a local or remote filesystem
-   Lake(SourceLake),
+   Files(SourceFiles),
 
    /// This source table reads files from Open Table format databases like Delta Lake
    OpenTable(SourceOpenTable),
@@ -48,21 +48,24 @@ impl SourceTable {
         catalog: Arc<DashMap<String, (Option<DFSchema>, Vec<UnboundedSender<DataFrame>>)>>,
     ) -> JoinHandle<()> {
 
-        // create copies of the pointers needed for this task
+        // Create copies of the pointers needed for this task
         let catalog_pointer = catalog.clone();
         let mut table = self.clone();
+
+        // Add the table to the catalog. Only continue if another 
+        // table with the same name doesn't already exist
+        if let Err(_) = table.register(catalog_pointer.clone()) {
+            panic!("Failed to start a source table.");
+        };
 
         spawn(async move {
             
             // Start the ticker to manage how often the poll is triggered
             let interval = interval(table.poll_interval());
 
-            // add the table to the catalog. Only continue if another 
-            // table with the same name doesn't already exist
-            if let Ok(_) = table.register(catalog_pointer.clone()) {
-                info!(target: table.table_name(), "Starting to poll table {}.", table.table_name());
-                table.start_polling(interval, catalog_pointer).await;
-            };
+            // Start polling the source dataset for new data
+            info!(target: table.table_name(), "Starting to poll table {}.", table.table_name());
+            table.start_polling(interval, catalog_pointer).await;
 
         })
         
@@ -135,7 +138,7 @@ impl SourceTable {
     /// Get the name specified for the table
 	fn table_name(&self) -> &String {
         match self {
-            Self::Lake(table) => table.table_name(),
+            Self::Files(table) => table.table_name(),
             Self::OpenTable(table) => table.table_name(),
         }
     }
@@ -143,7 +146,7 @@ impl SourceTable {
     // Get the frequency that the source should be polled
     fn poll_interval(&self) -> Duration {
         match self {
-            Self::Lake(table) => table.poll_interval(),
+            Self::Files(table) => table.poll_interval(),
             Self::OpenTable(table) => table.poll_interval(),
         }
     }
@@ -172,7 +175,7 @@ impl SourceTable {
     /// The logic per table type for reading new data from source
     async fn read_new_data(&mut self) -> Result<(bool, DataFrame), Error> {
 		match self {
-			Self::Lake(table) => table.read_new_data().await,
+			Self::Files(table) => table.read_new_data().await,
             Self::OpenTable(table) => table.read_new_data().await,
 		}
 	}
@@ -236,7 +239,7 @@ impl SourceTable {
     /// Define what to do if something goes wrong
 	fn on_fail(&self) -> FailAction {
 		match self {
-			Self::Lake(table) => table.on_fail(),
+			Self::Files(table) => table.on_fail(),
             Self::OpenTable(table) => table.on_fail(),
 		}
 	}

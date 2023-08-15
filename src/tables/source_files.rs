@@ -1,4 +1,4 @@
-//! # SourceLake
+//! # SourceFiles
 //!
 //! This module defines the logic for a source table read from a local or remote
 //! filesystem. It works by polling a specified file directory and reading all
@@ -24,16 +24,16 @@ use datafusion::error::Result;
 use std::fs::read_dir;
 
 
-/// The SourceLake reads files from a local or remote filesystem
+/// The SourceFiles reads files from a local or remote filesystem
 #[derive(Debug, Deserialize, Clone)]
-pub struct SourceLake {
+pub struct SourceFiles {
 	
 	/// A user defined name for the table. This does not need to correlate
 	/// with the directory path where the tables files are stored.
     #[serde(deserialize_with="five_hundred_chars_check", default="random_table_name")]
 	pub table_name: String,
 
-	/// The parent filepath where all data this SourceLake handles will be written to
+	/// The parent filepath where all data this SourceFiles handles will be written to
     #[serde(deserialize_with="path_dir_check")]
     pub dirpath: PathBuf,
 
@@ -57,7 +57,7 @@ pub struct SourceLake {
 }
 
 
-impl SourceLake {
+impl SourceFiles {
 
 	/// Getter function for returning the name of the table this table is reading from
 	pub fn table_name(&self) -> &String {

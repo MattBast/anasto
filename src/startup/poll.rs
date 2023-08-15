@@ -25,7 +25,7 @@ pub async fn start(
 		handles.push(handle);
 	}
 
-	for mut table in config.dest_table {
+	for mut table in config.destination_table {
 		let handle = table.start(catalog.clone()).await;
 		handles.push(handle);
 	}
