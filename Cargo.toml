@@ -17,3 +17,5 @@ convert_case = "0.6.0"
 time = "0.3.25"
 deltalake = { version = "0.14.0", features = ["datafusion"] }
 uuid = { version = "1.2.2", features = ["v4"] }
+arrow-schema = "43.0.0"
+parquet = "43.0.0"

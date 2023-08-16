@@ -36,8 +36,7 @@ pub struct SourceOpenTable {
     #[serde(deserialize_with="path_dir_check")]
     pub dirpath: PathBuf,
 
-    /// The type of file that the tables data is stored in. The table cannot be stored
-    /// in multiple filetypes.
+    /// The open table format the data is stored in
     #[serde(default)]
     pub format: OpenTableFormat,
 

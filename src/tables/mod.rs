@@ -16,6 +16,7 @@ pub mod utils;
 pub mod source_files;
 pub mod source_open_table;
 pub mod dest_files;
+pub mod dest_open_table;
 
 pub mod source_tables;
 pub mod dest_tables;

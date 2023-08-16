@@ -19,6 +19,7 @@ use tokio::sync::mpsc::{ UnboundedSender, unbounded_channel };
 
 // crates from the internal tables module
 use crate::tables::dest_files::DestFile;
+use crate::tables::dest_open_table::DestOpenTable;
 use crate::tables::FailAction;
 
 /// The variants in this enum represent all the different destination tables that Anasto can process.
@@ -26,8 +27,11 @@ use crate::tables::FailAction;
 #[serde(tag="type")]
 pub enum DestTable {
    
-   /// This source table reads files from a local or remote filesystem
+   /// This destination table writes files to a local or remote filesystem
    Files(DestFile),
+
+   /// This destination table writes files to Open Table format databases like Delta Lake
+   OpenTable(DestOpenTable),
 
 }
 
@@ -86,6 +90,7 @@ impl DestTable {
 	fn src_table_name(&self) -> &String {
         match self {
             Self::Files(table) => table.src_table_name(),
+            Self::OpenTable(table) => table.src_table_name(),
         }
     }
 
@@ -93,6 +98,7 @@ impl DestTable {
     fn dest_table_name(&self) -> &String {
         match self {
             Self::Files(table) => table.dest_table_name(),
+            Self::OpenTable(table) => table.dest_table_name(),
         }
     }
 
@@ -124,6 +130,7 @@ impl DestTable {
     async fn write_new_data(&mut self, df: DataFrame) -> Result<(), Error> {
 		match self {
 			Self::Files(table) => table.write_new_data(df).await,
+            Self::OpenTable(table) => table.write_new_data(df).await,
 		}
 	}
 
@@ -131,6 +138,7 @@ impl DestTable {
 	fn on_fail(&self) -> FailAction {
 		match self {
 			Self::Files(table) => table.on_fail(),
+            Self::OpenTable(table) => table.on_fail(),
 		}
 	}
 
