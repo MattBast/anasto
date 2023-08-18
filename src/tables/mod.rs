@@ -7,7 +7,7 @@
 //! - Each Table variant is defined in it's own sub-module
 //! - Sub-modules also define the configuration logic for each table
 
-use serde_derive::Deserialize;
+use serde_derive::{ Serialize, Deserialize };
 
 // Some handy functions that are used across different Tables
 pub mod utils;
@@ -23,7 +23,8 @@ pub mod dest_tables;
 
 
 /// This enum defines the actions that a Table can take when it handles an error
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all="snake_case")]
 pub enum FailAction {
    
    /// This action tells the Table to skip the data it had issues with
@@ -42,7 +43,8 @@ impl Default for FailAction {
 }
 
 /// This enum defines the file types that the lake tables can work with
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all="snake_case")]
 pub enum LakeFileType {
    
    /// csv files
@@ -67,7 +69,8 @@ impl Default for LakeFileType {
 
 
 /// This enum defines the open table types that the lake tables can work with
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all="snake_case")]
 pub enum OpenTableFormat {
    
    /// Delta Lake

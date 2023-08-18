@@ -6,7 +6,7 @@
 use serde::*;
 use log::info;
 use std::io::Error;
-use serde_derive::Deserialize;
+use serde_derive::{ Serialize, Deserialize };
 use std::path::PathBuf;
 use std::time::SystemTime;
 use crate::tables::{ FailAction, LakeFileType };
@@ -22,7 +22,7 @@ use convert_case::{ Case, Casing };
 use uuid::Uuid;
 
 /// The DestFile reads files from a local or remote filesystem
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DestFile {
 	
 	/// A user defined name for the table. This does not need to correlate

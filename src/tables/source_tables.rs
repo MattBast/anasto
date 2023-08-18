@@ -10,7 +10,7 @@
 // standard, dashmap, tokio and datafusion crates 
 use log::{ info, error };
 use std::io::{ Error, ErrorKind };
-use serde_derive::Deserialize;
+use serde_derive::{ Serialize, Deserialize };
 use dashmap::DashMap;
 use std::sync::Arc;
 use datafusion::dataframe::DataFrame;
@@ -27,7 +27,7 @@ use crate::tables::source_open_table::SourceOpenTable;
 use crate::tables::FailAction;
 
 /// The variants in this enum represent all the different source tables that Anasto can process.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag="type")]
 pub enum SourceTable {
    

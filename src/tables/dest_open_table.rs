@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use serde::*;
 use log::info;
 use std::io::{ Error, ErrorKind };
-use serde_derive::Deserialize;
+use serde_derive::{ Serialize, Deserialize };
 use std::path::PathBuf;
 use std::time::SystemTime;
 use crate::tables::{ FailAction, OpenTableFormat };
@@ -36,7 +36,7 @@ use parquet::{
 
 
 /// The DestOpenTable reads files from a local or remote filesystem
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DestOpenTable {
 	
 	/// A user defined name for the table. This does not need to correlate

@@ -7,16 +7,16 @@
 
 use log::info;
 use std::env;
-use std::io::ErrorKind;
+use std::io::{ ErrorKind, Error };
 use std::fs::read_to_string;
-use serde_derive::Deserialize;
+use serde_derive::{ Serialize, Deserialize };
 use std::path::PathBuf;
 
 use crate::tables::{ source_tables::SourceTable, dest_tables::DestTable };
 
 
 /// Top level container of all the fields in the config file
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
    
    /// the source tables that listen to a source dataset and reads all changes
@@ -24,17 +24,25 @@ pub struct Config {
 
    /// the destination tables that get all changes from a specifc source table
    /// and write to a specified destination
+   #[serde(default)]
    pub destination_table: Vec<DestTable>,
 
 }
 
-/// Looks for the config file. If it can't find it, start Anasto with
-/// default values.
+/// Gets path to config from command line args and loads resources specified
+/// in it 
 pub fn get() -> Config {
 
     let filepath = get_config_filepath();
+    let file_content = read_to_string(&filepath);
+    read_config(file_content, filepath)
 
-    match read_to_string(&filepath) {
+}
+
+/// Loads resources specified in config file 
+fn read_config(file_content: Result<String, Error>, filepath: String) -> Config {
+
+    match file_content {
 
         Ok(content) => match toml::from_str(&content) {
             
@@ -44,7 +52,7 @@ pub fn get() -> Config {
                 config
 
             },
-            Err(error) => panic!("Got error {} while trying to parse {}", error, &filepath)
+            Err(error) => panic!("{}", error)
 
         },
         Err(error) => match error.kind() {
@@ -79,5 +87,116 @@ fn get_config_filepath() -> String {
     }
 
     filepath.canonicalize().unwrap().to_str().unwrap().to_string()
+
+}
+
+
+#[cfg(test)]
+mod tests {
+ use super::*;
+
+    #[test]
+    fn can_read_tables_from_config() {
+    
+        let config_content = String::from(r#"
+            [[source_table]]
+            type = "Files"
+            table_name = "csv_table"
+            dirpath = "./tests/data/csv_table/"
+
+            [[destination_table]]
+            type = "Files"
+            source_table_name = "csv_table"
+            dest_table_name = "json_table"
+            dirpath = "./tests/data/json_table/"
+            filetype = "json"
+        "#);
+
+        let config = read_config(Ok(config_content), ".".into());
+
+        assert_eq!(config.source_table.len(), 1);
+        assert_eq!(config.destination_table.len(), 1);
+
+    }
+
+    #[test]
+    fn missing_destinations_do_not_cause_a_panic() {
+    
+        // dirpath points at file instead of directory
+        let config_content = String::from(r#"
+            [[source_table]]
+            type = "Files"
+            table_name = "csv_table"
+            dirpath = "./tests/data/csv_table/" 
+        "#);
+
+        let _config = read_config(Ok(config_content), "./config.toml".into());
+
+    }
+
+    #[test]
+    #[should_panic(expected = "TOML parse error at line 1, column 1\n  |\n1 | \n  | ^\nmissing field `source_table`\n")]
+    fn missing_sources_do_cause_a_panic() {
+    
+        // dirpath points at file instead of directory
+        let config_content = String::from(r#"
+            [[destination_table]]
+            type = "Files"
+            source_table_name = "csv_table"
+            dest_table_name = "json_table"
+            dirpath = "./tests/data/json_table/"
+            filetype = "json"
+        "#);
+
+        let _config = read_config(Ok(config_content), "./config.toml".into());
+
+    }
+
+    #[test]
+    #[should_panic(expected = "The path: ./tests/data/csv_table.csv is not a directory.")]
+    fn bad_table_causes_panic() {
+    
+        // dirpath points at file instead of directory
+        let config_content = String::from(r#"
+            [[source_table]]
+            type = "Files"
+            dirpath = "./tests/data/csv_table/" 
+        "#);
+
+        let _config = read_config(Ok(config_content), "./config.toml".into());
+
+    }
+
+    #[test]
+    #[should_panic]
+    fn bad_table_with_good_table_causes_panic() {
+    
+        // source table is bad, destination is good
+        let config_content = String::from(r#"
+            [[source_table]]
+            type = "Files"
+            table_name = "csv_table"
+            dirpath = "./tests/data/csv_table.csv" 
+
+            [[destination_table]]
+            type = "Files"
+            source_table_name = "csv_table"
+            dest_table_name = "json_table"
+            dirpath = "./tests/data/json_table/"
+            filetype = "json"
+        "#);
+
+        let _config = read_config(Ok(config_content), ".".into());
+
+    }
+
+    #[test]
+    #[should_panic]
+    fn error_reading_file_causes_panic() {
+    
+        let config_content_error = Error::new(ErrorKind::Other, "Couldn't read file.");
+        let _config = read_config(Err(config_content_error), ".".into());
+
+    }
 
 }

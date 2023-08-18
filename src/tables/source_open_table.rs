@@ -4,7 +4,7 @@
 //! database like Delta Lake.
 
 use log::{ info, warn };
-use serde_derive::Deserialize;
+use serde_derive::{ Serialize, Deserialize };
 use std::path::PathBuf;
 use std::path::Path;
 use std::time::{SystemTime, Duration};
@@ -26,7 +26,7 @@ use datafusion::scalar::ScalarValue;
 
 
 /// The SourceOpenTable reads files from a local or remote filesystem
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SourceOpenTable {
 	
 	/// A user defined name for the table. This does not need to correlate
