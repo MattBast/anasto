@@ -147,12 +147,11 @@ impl DestOpenTable {
 	    	writer.write(batch).await?; 
 	    }
 
-	    let adds = writer
+	    // Confirm all the data changes and make them available at the destination
+	    let _ = writer
 	        .flush_and_commit(&mut table)
 	        .await
 	        .expect("Failed to flush write");
-
-	    info!(target: &self.dest_table_name, "{} adds written", adds);
 
 	    Ok(())
 

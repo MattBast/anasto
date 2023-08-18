@@ -21,3 +21,10 @@ source_table_name = "delta_table"
 dest_table_name = "delta_as_csv_table"
 dirpath = "./tests/data/delta_as_csv_table/"
 filetype = "Csv"
+
+[[destination_table]]
+type = "OpenTable"
+source_table_name = "csv_table"
+dest_table_name = "csv_as_delta_table"
+dirpath = "./tests/data/csv_as_delta/"
+filetype = "Delta"

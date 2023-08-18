@@ -1,0 +1,2 @@
+{"add":{"path":"part-00000-cbf4cdc5-685b-491a-9ff9-6b4ecd9dabcd-c000.zstd.parquet","size":917,"partitionValues":{},"modificationTime":1692177054260,"dataChange":true,"stats":"{\"numRecords\":3,\"minValues\":{\"id\":1,\"value\":\"hello world\"},\"maxValues\":{\"id\":3,\"value\":\"hi\"},\"nullCount\":{\"value\":0,\"id\":0}}","tags":null}}
+{"commitInfo":{"timestamp":1692177054260,"operation":"WRITE","operationParameters":{"mode":"Append"},"clientVersion":"delta-rs.0.14.0"}}

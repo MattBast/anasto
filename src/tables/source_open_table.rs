@@ -3,9 +3,10 @@
 //! This module defines the logic for a source table read from an open table
 //! database like Delta Lake.
 
-use log::info;
+use log::{ info, warn };
 use serde_derive::Deserialize;
 use std::path::PathBuf;
+use std::path::Path;
 use std::time::{SystemTime, Duration};
 use crate::tables::{ FailAction, OpenTableFormat };
 use crate::tables::utils::{
@@ -20,7 +21,8 @@ use crate::tables::utils::{
 use std::sync::Arc;
 use datafusion::prelude::{ SessionContext, DataFrame };
 use datafusion::error::Result;
-
+use datafusion::logical_expr::{ col, replace, Expr };
+use datafusion::scalar::ScalarValue;
 
 
 /// The SourceOpenTable reads files from a local or remote filesystem
@@ -52,6 +54,10 @@ pub struct SourceOpenTable {
     #[serde(default)]
     pub on_fail: FailAction,
 
+    /// Private field. Tracks whether this table has done it's first read
+    #[serde(default)]
+    first_read: bool
+
 }
 
 
@@ -81,19 +87,19 @@ impl SourceOpenTable {
 
 		info!(target: &self.table_name, "Reading data created before {:?}.", system_time_to_string(self.bookmark));
 
-		// read the files into a dataframe (table)
+		// read the files into a dataframe
         let df = self.read_table(&ctx).await?;
 
         // update the bookmark so the same files aren't read twice
         self.bookmark = SystemTime::now();
 
-		Ok((true, df))
+		Ok(df)
 
 	}
 
 	/// Decide which format of open table to read from. Run the specified read 
 	/// function and return a dataframe.
-	async fn read_table(&self, ctx: &SessionContext) -> Result<DataFrame, std::io::Error> {
+	async fn read_table(&self, ctx: &SessionContext) -> Result<(bool, DataFrame), std::io::Error> {
 		
 		let df = match self.format {
 			OpenTableFormat::DeltaLake => self.read_delta(ctx).await?,
@@ -105,24 +111,94 @@ impl SourceOpenTable {
 
 	/// Decide which format of open table to read from. Run the specified read 
 	/// function and return a dataframe.
-	async fn read_delta(&self, ctx: &SessionContext) -> Result<DataFrame, std::io::Error> {
+	async fn read_delta(&self, ctx: &SessionContext) -> Result<(bool, DataFrame), std::io::Error> {
 		
-		// **********************************************************************
-		// add logic to read full tablr on first pass and cdc on all passes after that
-		// **********************************************************************
+		match self.first_read {
+			false => self.delta_first_read(ctx).await,
+			true => self.delta_read_cdc(ctx).await,
+		}
+
+	}
+
+	/// Read all rows from the latest version of a delta table and return as a dataframe
+	async fn delta_first_read(&self, ctx: &SessionContext) -> Result<(bool, DataFrame), std::io::Error> {
+		
+		// read the table
 		let table = deltalake::open_table(self.dirpath.to_str().unwrap()).await.unwrap();
 	    let df = ctx.read_table(Arc::new(table)).unwrap();
 
-	    // **********************************************************************
-	    // add logic to pickup file paths using bookmark and created timestamp
-	    // also log a warning if change data can't be found
-	    // **********************************************************************
-	    let cdc_path = format!("{}/{}", self.dirpath.display(), "_change_data");
-	    let cdc_df = ctx.read_parquet(cdc_path, Default::default()).await?;
+	    // add mock cdc columns
+	    let df = df
+	    	.with_column("_change_type", Expr::Literal("insert".into()))
+	    	.unwrap()
+	    	.with_column("_commit_timestamp", self.dataframe_bookmark())
+	    	.unwrap();
 
-	    println!("{:?}", cdc_df.show().await?);
+	    Ok((true, df))
+	}
 
-		Ok(df)
+	/// Read all the cdc files that have not yet been read and return them as a dataframe
+	async fn delta_read_cdc(&self, ctx: &SessionContext) -> Result<(bool, DataFrame), std::io::Error> {
+		
+		// get a list of the cdc files that have not yet been read
+	    let new_cdc_paths = self.get_unread_cdc_filepaths()?;
+	    if new_cdc_paths.is_empty()  { return Ok((false, ctx.read_empty().unwrap())) };
+
+	    // read new cdc files into a dataframe
+	    let cdc_df = ctx.read_parquet(new_cdc_paths, Default::default()).await?;
+	    
+	    // filter out the "update_preimage" changes, change the "update_postimage"
+	    // change type to "update" and add a commit timestamp if it doesn't already
+	    // exist
+	    let cdc_df = cdc_df
+	    	.filter(col("_change_type").not_eq(Expr::Literal("update_preimage".into())))?
+	    	.with_column("_change_type", replace(col("_change_type"), Expr::Literal("update_postimage".into()), Expr::Literal("update".into())))
+	    	.unwrap()
+	    	.with_column("_commit_timestamp", self.dataframe_bookmark())
+	    	.unwrap();
+
+	    Ok((true, cdc_df))
+
+	}
+
+	/// Return the tables bookmark as a DataFusion Dataframe timestamp
+	fn dataframe_bookmark(&self) -> Expr {
+		
+		let timestamp_seconds: i64 = self.bookmark.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs().try_into().unwrap();
+		Expr::Literal(ScalarValue::TimestampSecond(Some(timestamp_seconds), None))
+
+	}
+
+	/// Get a list of files that have been created or modified since they were last read
+	fn get_unread_cdc_filepaths(&self) -> Result<Vec<String>, std::io::Error> {
+
+		let mut paths = Vec::new();
+		let cdc_path = format!("{}/{}", self.dirpath.display(), "_change_data");
+
+		if !Path::new(&cdc_path).exists() { 
+			
+			warn!("Could not find a change data log at the path {:?}. No change data will be read until this path is found.", cdc_path);
+			return Ok(paths) 
+
+		}
+		
+		for entry in (std::fs::read_dir(cdc_path)?).flatten() {
+    
+            if let Ok(metadata) = entry.metadata() {
+                
+                if self.bookmark < metadata.created().unwrap() {
+                	paths.push(entry.path().into_os_string().into_string().unwrap())
+                }
+
+            } else {
+                
+                warn!("Skipping file {:?} as couldn't get metadata from it", entry.path());
+
+            }
+
+		}
+
+        Ok(paths)
 
 	}
 
