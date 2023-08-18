@@ -40,10 +40,8 @@ pub fn path_dir_check<'de, D: Deserializer<'de>>(d: D) -> Result<PathBuf, D::Err
 	let dirpath = PathBuf::from(&s);
 
     if !dirpath.exists() {
-        match std::fs::create_dir_all(&dirpath) {
-            Ok(_) => (),
-            Err(e) => return Err(D::Error::custom(e.to_string()))
-        };
+        let error_message = format!("The path: {} does not exist.", &s);
+        return Err(D::Error::custom(error_message));
     }
 
     if !dirpath.is_dir() {

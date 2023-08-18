@@ -148,10 +148,21 @@ impl SourceFiles {
 // 	use super::*;
 
 //     #[test]
-//     fn can_read_files() {
+//     fn simple_table_from_toml() {
     
-//         let subscriber = File { dirpath: PathBuf::new(".") };
-//         subscriber.poll_action();
+//         let content = String::from(r#"
+//             [[source_table]]
+//             type = "Files"
+//             table_name = "csv_table"
+//             dirpath = "./tests/data/csv_table/" 
+//         "#);
+
+//         let table: Result<SourceFiles, toml::de::Error> = toml::from_str(&content);
+
+//         match table {
+//         	Ok(_) => assert!(true),
+//         	Err(e) => assert!(false, "{}", e),
+//         };
 
 //     }
 

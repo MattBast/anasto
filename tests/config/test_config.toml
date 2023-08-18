@@ -1,29 +1,29 @@
 [[source_table]]
-type = "Files"
+type = "files"
 table_name = "csv_table"
 dirpath = "./tests/data/csv_table/"
 
 [[destination_table]]
-type = "Files"
+type = "files"
 source_table_name = "csv_table"
 dest_table_name = "json_table"
 dirpath = "./tests/data/json_table/"
 filetype = "json"
 
 [[source_table]]
-type = "OpenTable"
+type = "open_table"
 table_name = "delta_table"
 dirpath = "./tests/data/delta_table/"
 
 [[destination_table]]
-type = "Files"
+type = "files"
 source_table_name = "delta_table"
 dest_table_name = "delta_as_csv_table"
 dirpath = "./tests/data/delta_as_csv_table/"
 filetype = "csv"
 
 [[destination_table]]
-type = "OpenTable"
+type = "open_table"
 source_table_name = "csv_table"
 dest_table_name = "csv_as_delta_table"
 dirpath = "./tests/data/csv_as_delta/"

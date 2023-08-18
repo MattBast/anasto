@@ -33,7 +33,8 @@ pub struct Config {
 /// in it 
 pub fn get() -> Config {
 
-    let filepath = get_config_filepath();
+    let args: Vec<String> = env::args().collect();
+    let filepath = get_config_filepath(args);
     let file_content = read_to_string(&filepath);
     read_config(file_content, filepath)
 
@@ -68,9 +69,7 @@ fn read_config(file_content: Result<String, Error>, filepath: String) -> Config 
 }
 
 // Get the config filepath from the command line. Panic if one can't be found.
-fn get_config_filepath() -> String {
-
-    let args: Vec<String> = env::args().collect();
+fn get_config_filepath(args: Vec<String>) -> String {
 
     if args.len() < 2 {
         panic!("Could not find a filepath in the first argument. Try running something like `anasto config.toml`.")
@@ -100,12 +99,12 @@ mod tests {
     
         let config_content = String::from(r#"
             [[source_table]]
-            type = "Files"
+            type = "files"
             table_name = "csv_table"
             dirpath = "./tests/data/csv_table/"
 
             [[destination_table]]
-            type = "Files"
+            type = "files"
             source_table_name = "csv_table"
             dest_table_name = "json_table"
             dirpath = "./tests/data/json_table/"
@@ -125,7 +124,7 @@ mod tests {
         // dirpath points at file instead of directory
         let config_content = String::from(r#"
             [[source_table]]
-            type = "Files"
+            type = "files"
             table_name = "csv_table"
             dirpath = "./tests/data/csv_table/" 
         "#);
@@ -141,7 +140,7 @@ mod tests {
         // dirpath points at file instead of directory
         let config_content = String::from(r#"
             [[destination_table]]
-            type = "Files"
+            type = "files"
             source_table_name = "csv_table"
             dest_table_name = "json_table"
             dirpath = "./tests/data/json_table/"
@@ -153,14 +152,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "The path: ./tests/data/csv_table.csv is not a directory.")]
+    #[should_panic(expected = "The path: ./tests/data/csv_table.csv does not exist.")]
     fn bad_table_causes_panic() {
     
         // dirpath points at file instead of directory
         let config_content = String::from(r#"
             [[source_table]]
-            type = "Files"
-            dirpath = "./tests/data/csv_table/" 
+            type = "files"
+            table_name = "csv_table"
+            dirpath = "./tests/data/csv_table.csv" 
         "#);
 
         let _config = read_config(Ok(config_content), "./config.toml".into());
@@ -168,18 +168,18 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "The path: ./tests/data/csv_table.csv does not exist.")]
     fn bad_table_with_good_table_causes_panic() {
     
         // source table is bad, destination is good
         let config_content = String::from(r#"
             [[source_table]]
-            type = "Files"
+            type = "files"
             table_name = "csv_table"
             dirpath = "./tests/data/csv_table.csv" 
 
             [[destination_table]]
-            type = "Files"
+            type = "files"
             source_table_name = "csv_table"
             dest_table_name = "json_table"
             dirpath = "./tests/data/json_table/"
@@ -191,11 +191,11 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Could not find the file ./config.toml.")]
     fn error_reading_file_causes_panic() {
     
-        let config_content_error = Error::new(ErrorKind::Other, "Couldn't read file.");
-        let _config = read_config(Err(config_content_error), ".".into());
+        let config_content_error = Error::from(ErrorKind::NotFound);
+        let _config = read_config(Err(config_content_error), "./config.toml".into());
 
     }
 
