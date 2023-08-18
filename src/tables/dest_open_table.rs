@@ -251,7 +251,7 @@ impl DestOpenTable {
                     panic!("DataType::Map should contain a struct field child");
                 }
             },
-			s => return Err(Error::new(ErrorKind::Other, format!(
+			s => Err(Error::new(ErrorKind::Other, format!(
                 "Invalid data type for Delta Lake: {s}"
             ))),
 		}

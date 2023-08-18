@@ -5,14 +5,14 @@
 //! - A table listens for new data on tokio mpsc channel
 //! - This channel is added to the internal data catalog against the source table that supplies this table
 
+use crate::startup::Catalog;
+
 // standard, dashmap, tokio and datafusion crates 
 use log::{ info, error };
 use std::io::{ Error, ErrorKind };
 use serde_derive::{ Serialize, Deserialize };
-use dashmap::{ DashMap, mapref::entry::Entry };
-use std::sync::Arc;
+use dashmap::mapref::entry::Entry;
 use datafusion::dataframe::DataFrame;
-use datafusion::common::DFSchema;
 use tokio::spawn;
 use tokio::task::JoinHandle;
 use tokio::sync::mpsc::{ UnboundedSender, unbounded_channel };
@@ -39,10 +39,7 @@ pub enum DestTable {
 impl DestTable {
 
 	/// Spawn an async task that periodically reads new data from the source dataset
-    pub async fn start(
-        &mut self,
-        catalog: Arc<DashMap<String, (Option<DFSchema>, Vec<UnboundedSender<DataFrame>>)>>,
-    ) -> JoinHandle<()> {
+    pub async fn start(&mut self, catalog: Catalog) -> JoinHandle<()> {
 
         // create copies of the pointers needed for this task
         let mut table = self.clone();
@@ -103,11 +100,7 @@ impl DestTable {
     }
 
     /// Add the table to the internal data catalog
-    fn register(
-        &self, 
-        catalog: Arc<DashMap<String, (Option<DFSchema>, Vec<UnboundedSender<DataFrame>>)>>,
-        tx: UnboundedSender<DataFrame>,
-    ) -> Result<(), Error> {
+    fn register(&self, catalog: Catalog, tx: UnboundedSender<DataFrame>,) -> Result<(), Error> {
         
         match catalog.entry(self.src_table_name().to_string()) {
             

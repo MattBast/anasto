@@ -16,7 +16,7 @@ pub fn five_hundred_chars_check<'de, D: Deserializer<'de>>(d: D) -> Result<Strin
 
 	let s = String::deserialize(d)?;
 
-    if &s.chars().count() > &500 {
+    if s.chars().count() > 500 {
         let error_message = format!("The string: {} is longer than 500 chars.", &s);
         return Err(D::Error::custom(error_message));
     }

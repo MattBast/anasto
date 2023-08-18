@@ -23,7 +23,7 @@ pub mod dest_tables;
 
 
 /// This enum defines the actions that a Table can take when it handles an error
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
 #[serde(rename_all="snake_case")]
 pub enum FailAction {
    
@@ -32,22 +32,18 @@ pub enum FailAction {
 
    /// This action tells the Table to stop processing new data and effectively 
    /// shutdown (the other tables remain unaffected)
+   #[default]
    Stop
 
 }
 
-impl Default for FailAction {
-    
-    fn default() -> Self { FailAction::Stop }
-
-}
-
 /// This enum defines the file types that the lake tables can work with
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
 #[serde(rename_all="snake_case")]
 pub enum LakeFileType {
    
    /// csv files
+   #[default]
    Csv,
 
    /// json files
@@ -61,25 +57,14 @@ pub enum LakeFileType {
 
 }
 
-impl Default for LakeFileType {
-    
-    fn default() -> Self { LakeFileType::Csv }
-
-}
-
 
 /// This enum defines the open table types that the lake tables can work with
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
 #[serde(rename_all="snake_case")]
 pub enum OpenTableFormat {
    
    /// Delta Lake
+   #[default]
    DeltaLake,
-
-}
-
-impl Default for OpenTableFormat {
-    
-    fn default() -> Self { OpenTableFormat::DeltaLake }
 
 }

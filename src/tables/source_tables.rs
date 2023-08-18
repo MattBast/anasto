@@ -7,12 +7,12 @@
 //! - Each SourceTable variant is defined in it's own sub-module
 //! - Sub-modules also define the configuration logic for each table
 
+use crate::startup::Catalog;
+
 // standard, dashmap, tokio and datafusion crates 
 use log::{ info, error };
 use std::io::{ Error, ErrorKind };
 use serde_derive::{ Serialize, Deserialize };
-use dashmap::DashMap;
-use std::sync::Arc;
 use datafusion::dataframe::DataFrame;
 use datafusion::common::DFSchema;
 use std::time::Duration;
@@ -43,18 +43,14 @@ pub enum SourceTable {
 impl SourceTable {
 
 	/// Spawn an async task that periodically reads new data from the source dataset
-    pub async fn start(
-        &mut self,
-        catalog: Arc<DashMap<String, (Option<DFSchema>, Vec<UnboundedSender<DataFrame>>)>>,
-    ) -> JoinHandle<()> {
+    pub async fn start(&mut self, catalog: Catalog) -> JoinHandle<()> {
 
         // Create copies of the pointers needed for this task
-        let catalog_pointer = catalog.clone();
         let mut table = self.clone();
 
         // Add the table to the catalog. Only continue if another 
         // table with the same name doesn't already exist
-        if let Err(_) = table.register(catalog_pointer.clone()) {
+        if table.register(catalog.clone()).is_err() {
             panic!("Failed to start a source table.");
         };
 
@@ -65,18 +61,14 @@ impl SourceTable {
 
             // Start polling the source dataset for new data
             info!(target: table.table_name(), "Starting to poll table {}.", table.table_name());
-            table.start_polling(interval, catalog_pointer).await;
+            table.start_polling(interval, catalog).await;
 
         })
         
     }
 
     /// The logic for polling a dataset for changes
-    async fn start_polling(
-        &mut self, 
-        mut interval: Interval, 
-        catalog: Arc<DashMap<String, (Option<DFSchema>, Vec<UnboundedSender<DataFrame>>)>>,
-    ) {
+    async fn start_polling(&mut self, mut interval: Interval, catalog: Catalog) {
         
         loop {
             
@@ -152,10 +144,7 @@ impl SourceTable {
     }
 
     /// Add the table to the internal data catalog
-    fn register(
-        &self, 
-        catalog: Arc<DashMap<String, (Option<DFSchema>, Vec<UnboundedSender<DataFrame>>)>>,
-    ) -> Result<(), Error> {
+    fn register(&self, catalog: Catalog) -> Result<(), Error> {
         
         let entry = (None, Vec::new());
         match catalog.insert(self.table_name().clone(), entry) {
@@ -166,7 +155,7 @@ impl SourceTable {
             Some(_) => {
                 let error_message = "Source table already exists. Tables cannot have the same names.";
                 error!(target: self.table_name(), "{}", &error_message);
-                return Err(Error::new(ErrorKind::Other, error_message));
+                Err(Error::new(ErrorKind::Other, error_message))
             }
         }
         
@@ -181,11 +170,7 @@ impl SourceTable {
 	}
 
     /// Update the data catalog if the schema changes
-    fn update_catalog(
-        &self, 
-        catalog: Arc<DashMap<String, (Option<DFSchema>, Vec<UnboundedSender<DataFrame>>)>>,
-        schema: DFSchema
-    ) -> Result<Vec<UnboundedSender<DataFrame>>, Error> {
+    fn update_catalog(&self, catalog: Catalog, schema: DFSchema) -> Result<Vec<UnboundedSender<DataFrame>>, Error> {
         
         if let Some(mut entry) = catalog.clone().get_mut(self.table_name()) {
             
@@ -229,7 +214,7 @@ impl SourceTable {
 
             match tx.send(df.clone()) {
                 Ok(_) => Ok(()),
-                Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string()))
+                Err(e) => Err(Error::new(ErrorKind::Other, e.to_string()))
             }
 
         })
