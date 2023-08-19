@@ -199,4 +199,33 @@ mod tests {
 
     }
 
+    #[test]
+    fn valid_config_filepath_in_args() {
+    
+        let _canon_path = get_config_filepath(
+            vec!["anasto".to_string(), "./tests/config/test_config.toml".to_string()]
+        );
+
+    }
+
+    #[test]
+    #[should_panic(expected = "Could not find a filepath in the first argument. Try running something like `anasto config.toml`.")]
+    fn no_config_filepath_in_args() {
+    
+        let _canon_path = get_config_filepath(
+            vec!["anasto".to_string()]
+        );
+
+    }
+
+    #[test]
+    #[should_panic(expected = "The filepath: ./tests/config/new_config.toml does not exist.")]
+    fn config_filepath_in_args_does_not_exist() {
+    
+        let _canon_path = get_config_filepath(
+            vec!["anasto".to_string(), "./tests/config/new_config.toml".to_string()]
+        );
+
+    }
+
 }
