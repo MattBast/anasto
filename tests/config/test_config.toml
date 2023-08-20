@@ -19,9 +19,16 @@ filetype = "json"
 [[destination_table]]
 type = "files"
 source_table_name = "json_table"
-dest_table_name = "json_as_csv_table"
-dirpath = "./tests/data/json_as_csv_table/"
-filetype = "csv"
+dest_table_name = "avro_table"
+dirpath = "./tests/data/avro_table/"
+filetype = "avro"
+
+[[destination_table]]
+type = "files"
+source_table_name = "json_table"
+dest_table_name = "parquet_table"
+dirpath = "./tests/data/parquet_table/"
+filetype = "parquet"
 
 # [[source_table]]
 # type = "open_table"

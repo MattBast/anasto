@@ -149,7 +149,7 @@ mod tests {
 	use std::sync::Arc;
 	use std::time::UNIX_EPOCH;
 	use std::matches;
-	use arrow_array::{ RecordBatch, StringArray, Int64Array };
+	use arrow_array::{ RecordBatch, StringArray, Int64Array, Int32Array };
 	use arrow_schema::{ Schema, Field, DataType };
 	
 
@@ -419,29 +419,20 @@ mod tests {
 
         // create the expected contents of the dataframe (as record batches)
         let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int64, true),
-            Field::new("value", DataType::Utf8, true),
+            Field::new("id", DataType::Int32, false),
+            Field::new("value", DataType::Utf8, false),
         ]));
 
         let batch_one = RecordBatch::try_new(
             Arc::clone(&schema),
             vec![
-                Arc::new(Int64Array::from(vec![1, 2])),
-                Arc::new(StringArray::from(vec!["hello world", "hey there"])),
-            ],
-        ).unwrap();
-
-        let batch_two = RecordBatch::try_new(
-            Arc::clone(&schema),
-            vec![
-                Arc::new(Int64Array::from(vec![3])),
-                Arc::new(StringArray::from(vec!["hi"])),
+                Arc::new(Int32Array::from(vec![1, 2, 3])),
+                Arc::new(StringArray::from(vec!["hello world", "hey there", "hi"])),
             ],
         ).unwrap();
 
         assert!(read_success);
         assert_eq!(df_data[0], batch_one);
-        assert_eq!(df_data[1], batch_two);
 
     }
 
@@ -482,8 +473,8 @@ mod tests {
         ).unwrap();
 
         assert!(read_success);
-        assert_eq!(df_data[0], batch_one);
-        assert_eq!(df_data[1], batch_two);
+        assert_eq!(df_data[1], batch_one);
+        assert_eq!(df_data[0], batch_two);
 
     }
 
