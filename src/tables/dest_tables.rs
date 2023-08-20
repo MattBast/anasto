@@ -24,7 +24,7 @@ use crate::tables::FailAction;
 
 /// The variants in this enum represent all the different destination tables that Anasto can process.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag="type", rename_all="snake_case")]
+#[serde(tag="type", rename_all="snake_case", deny_unknown_fields)]
 pub enum DestTable {
    
    /// This destination table writes files to a local or remote filesystem

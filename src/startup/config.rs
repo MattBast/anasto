@@ -17,6 +17,7 @@ use crate::tables::{ source_tables::SourceTable, dest_tables::DestTable };
 
 /// Top level container of all the fields in the config file
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
    
    /// the source tables that listen to a source dataset and reads all changes
@@ -92,7 +93,7 @@ fn get_config_filepath(args: Vec<String>) -> String {
 
 #[cfg(test)]
 mod tests {
- use super::*;
+    use super::*;
 
     #[test]
     fn can_read_tables_from_config() {

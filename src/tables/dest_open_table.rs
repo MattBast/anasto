@@ -37,6 +37,7 @@ use parquet::{
 
 /// The DestOpenTable reads files from a local or remote filesystem
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct DestOpenTable {
 	
 	/// A user defined name for the table. This does not need to correlate

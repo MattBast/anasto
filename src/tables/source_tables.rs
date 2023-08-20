@@ -28,7 +28,7 @@ use crate::tables::FailAction;
 
 /// The variants in this enum represent all the different source tables that Anasto can process.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(tag="type", rename_all="snake_case")]
+#[serde(tag="type", rename_all="snake_case", deny_unknown_fields)]
 pub enum SourceTable {
    
    /// This source table reads files from a local or remote filesystem

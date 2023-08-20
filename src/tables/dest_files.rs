@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 /// The DestFile reads files from a local or remote filesystem
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct DestFile {
 	
 	/// A user defined name for the table. This does not need to correlate
@@ -90,6 +91,8 @@ impl DestFile {
 		std::fs::create_dir_all(&self.dirpath)?;
 
 		info!(target: &self.dest_table_name, "Writing files to {}.", &filepath);
+
+		// println!("{:?}", df.clone().show().await?);
 
 		// write the dataframe to file
 		match self.filetype {

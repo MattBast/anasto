@@ -27,6 +27,7 @@ use datafusion::scalar::ScalarValue;
 
 /// The SourceOpenTable reads files from a local or remote filesystem
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct SourceOpenTable {
 	
 	/// A user defined name for the table. This does not need to correlate

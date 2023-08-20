@@ -23,9 +23,9 @@ use datafusion::prelude::{ SessionContext, DataFrame };
 use datafusion::error::Result;
 use std::fs::read_dir;
 
-
 /// The SourceFiles reads files from a local or remote filesystem
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct SourceFiles {
 	
 	/// A user defined name for the table. This does not need to correlate
@@ -143,27 +143,348 @@ impl SourceFiles {
 
 }
 
-// #[cfg(test)]
-// mod tests {
-// 	use super::*;
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::sync::Arc;
+	use std::time::UNIX_EPOCH;
+	use std::matches;
+	use arrow_array::{ RecordBatch, StringArray, Int64Array };
+	use arrow_schema::{ Schema, Field, DataType };
+	
 
-//     #[test]
-//     fn simple_table_from_toml() {
+    #[test]
+    fn table_from_toml_with_minimal_config() {
     
-//         let content = String::from(r#"
-//             [[source_table]]
-//             type = "Files"
-//             table_name = "csv_table"
-//             dirpath = "./tests/data/csv_table/" 
-//         "#);
+        let content = String::from(r#"
+            table_name = "csv_table"
+            dirpath = "./tests/data/csv_table/" 
+        "#);
 
-//         let table: Result<SourceFiles, toml::de::Error> = toml::from_str(&content);
+        let table: SourceFiles = toml::from_str(&content).unwrap();
 
-//         match table {
-//         	Ok(_) => assert!(true),
-//         	Err(e) => assert!(false, "{}", e),
-//         };
+        assert_eq!(table.table_name, "csv_table");
+        assert_eq!(table.dirpath, PathBuf::from("./tests/data/csv_table/").canonicalize().unwrap());
+        assert!(matches!(table.filetype, LakeFileType::Csv));
+        assert_eq!(table.bookmark, UNIX_EPOCH);
+        assert_eq!(table.poll_interval, 10_000);
+        assert!(matches!(table.on_fail, FailAction::Stop));
 
-//     }
+    }
 
-// }
+    #[test]
+    fn table_from_toml_with_maximum_config() {
+    
+        let content = String::from(r#"
+            table_name = "csv_table"
+            dirpath = "./tests/data/csv_table/" 
+            filetype = "csv"
+            poll_interval = 5000
+            on_fail = "skip"
+        "#);
+
+        let table: SourceFiles = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.table_name, "csv_table");
+        assert_eq!(table.dirpath, PathBuf::from("./tests/data/csv_table/").canonicalize().unwrap());
+        assert!(matches!(table.filetype, LakeFileType::Csv));
+        assert_eq!(table.bookmark, UNIX_EPOCH);
+        assert_eq!(table.poll_interval, 5000);
+        assert!(matches!(table.on_fail, FailAction::Skip));
+
+    }
+
+    #[test]
+    fn missing_mandatory_field() {
+    
+        let content = String::from(r#"
+            table_name = "csv_table"
+        "#);
+
+        let table: Result<SourceFiles, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "missing field `dirpath`", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn dirpath_does_not_exist() {
+    
+        let content = String::from(r#"
+            dirpath = "./tests/data/does_not_exist/" 
+        "#);
+
+        let table: Result<SourceFiles, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "The path: ./tests/data/does_not_exist/ does not exist.", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn dirpath_is_not_a_directory() {
+    
+        let content = String::from(r#"
+            dirpath = "./tests/data/csv_table/test_1.csv" 
+        "#);
+
+        let table: Result<SourceFiles, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "The path: ./tests/data/csv_table/test_1.csv is not a directory.", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+     #[test]
+    fn typo_in_fieldname() {
+    
+        let content = String::from(r#"
+            dirpath = "./tests/data/json_table/"
+            filepath = "json"
+        "#);
+
+        let table: Result<SourceFiles, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "unknown field `filepath`, expected one of `table_name`, `dirpath`, `filetype`, `bookmark`, `poll_interval`, `on_fail`", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn table_name_contains_too_many_characters() {
+    
+        let content = String::from(r#"
+            table_name = "name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name"
+            dirpath = "./tests/data/csv_table/test_1.csv" 
+        "#);
+
+        let table: Result<SourceFiles, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(
+        		e.message(), 
+        		"The string: name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name is longer than 500 chars.", 
+        		"Incorrect error message."
+        	),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn table_name_function_returns_table_name() {
+    
+        let content = String::from(r#"
+            table_name = "csv_table"
+            dirpath = "./tests/data/csv_table/" 
+        "#);
+
+        let table: SourceFiles = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.table_name(), "csv_table");
+
+    }
+
+    #[test]
+    fn on_fail_function_returns_fail_action() {
+    
+        let content = String::from(r#"
+            dirpath = "./tests/data/csv_table/" 
+        "#);
+
+        let table: SourceFiles = toml::from_str(&content).unwrap();
+
+        assert!(matches!(table.on_fail(), FailAction::Stop));
+
+    }
+
+    #[test]
+    fn poll_interval_function_returns_correct_duration() {
+    
+        let content = String::from(r#"
+            dirpath = "./tests/data/csv_table/" 
+        "#);
+
+        let table: SourceFiles = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.poll_interval(), Duration::from_millis(10_000));
+
+    }
+
+    #[tokio::test]
+    async fn can_read_csv_table() {
+    
+    	// define table config (mostly default config pointing at data in csv files)
+        let content = String::from(r#"
+            dirpath = "./tests/data/csv_table/" 
+        "#);
+
+        // create the table and read its data as a dataframe
+        let mut table: SourceFiles = toml::from_str(&content).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        // create the expected contents of the dataframe (as record batches)
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, true),
+            Field::new("value", DataType::Utf8, true),
+        ]));
+
+        let batch_one = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int64Array::from(vec![1, 2])),
+                Arc::new(StringArray::from(vec!["hello world", "hey there"])),
+            ],
+        ).unwrap();
+
+        let batch_two = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int64Array::from(vec![3])),
+                Arc::new(StringArray::from(vec!["hi"])),
+            ],
+        ).unwrap();
+
+        assert!(read_success);
+        assert_eq!(df_data[0], batch_one);
+        assert_eq!(df_data[1], batch_two);
+
+    }
+
+    #[tokio::test]
+    async fn can_read_json_table() {
+    
+    	// define table config (mostly default config pointing at data in csv files)
+        let content = String::from(r#"
+            dirpath = "./tests/data/json_table/" 
+            filetype = "json"
+        "#);
+
+        // create the table and read its data as a dataframe
+        let mut table: SourceFiles = toml::from_str(&content).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        // create the expected contents of the dataframe (as record batches)
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, true),
+            Field::new("value", DataType::Utf8, true),
+        ]));
+
+        let batch_one = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int64Array::from(vec![1, 2])),
+                Arc::new(StringArray::from(vec!["hello world", "hey there"])),
+            ],
+        ).unwrap();
+
+        let batch_two = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int64Array::from(vec![3])),
+                Arc::new(StringArray::from(vec!["hi"])),
+            ],
+        ).unwrap();
+
+        assert!(read_success);
+        assert_eq!(df_data[0], batch_one);
+        assert_eq!(df_data[1], batch_two);
+
+    }
+
+    #[tokio::test]
+    async fn can_read_avro_table() {
+    
+    	// define table config (mostly default config pointing at data in csv files)
+        let content = String::from(r#"
+            dirpath = "./tests/data/avro_table/" 
+            filetype = "avro"
+        "#);
+
+        // create the table and read its data as a dataframe
+        let mut table: SourceFiles = toml::from_str(&content).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        // create the expected contents of the dataframe (as record batches)
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, true),
+            Field::new("value", DataType::Utf8, true),
+        ]));
+
+        let batch_one = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int64Array::from(vec![1, 2])),
+                Arc::new(StringArray::from(vec!["hello world", "hey there"])),
+            ],
+        ).unwrap();
+
+        let batch_two = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int64Array::from(vec![3])),
+                Arc::new(StringArray::from(vec!["hi"])),
+            ],
+        ).unwrap();
+
+        assert!(read_success);
+        assert_eq!(df_data[0], batch_one);
+        assert_eq!(df_data[1], batch_two);
+
+    }
+
+    #[tokio::test]
+    async fn can_read_parquet_table() {
+    
+    	// define table config (mostly default config pointing at data in csv files)
+        let content = String::from(r#"
+            dirpath = "./tests/data/parquet_table/" 
+            filetype = "parquet"
+        "#);
+
+        // create the table and read its data as a dataframe
+        let mut table: SourceFiles = toml::from_str(&content).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        // create the expected contents of the dataframe (as record batches)
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, true),
+            Field::new("value", DataType::Utf8, true),
+        ]));
+
+        let batch_one = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int64Array::from(vec![1, 2])),
+                Arc::new(StringArray::from(vec!["hello world", "hey there"])),
+            ],
+        ).unwrap();
+
+        let batch_two = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int64Array::from(vec![3])),
+                Arc::new(StringArray::from(vec!["hi"])),
+            ],
+        ).unwrap();
+
+        assert!(read_success);
+        assert_eq!(df_data[0], batch_one);
+        assert_eq!(df_data[1], batch_two);
+
+    }
+
+}
