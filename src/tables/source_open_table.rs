@@ -7,7 +7,8 @@ use log::{ info, warn };
 use serde_derive::{ Serialize, Deserialize };
 use std::path::PathBuf;
 use std::path::Path;
-use std::time::{SystemTime, Duration};
+use chrono::{ DateTime, offset::Utc };
+use std::time::Duration;
 use crate::tables::{ FailAction, OpenTableFormat };
 use crate::tables::utils::{
 	five_hundred_chars_check, 
@@ -15,7 +16,6 @@ use crate::tables::utils::{
 	path_dir_check,
 	start_of_time_timestamp,
 	ten_secs_as_millis,
-	system_time_to_string
 };
 
 use std::sync::Arc;
@@ -45,7 +45,7 @@ pub struct SourceOpenTable {
 
     /// Tracks which files have been read using their created timestamp
     #[serde(default="start_of_time_timestamp")]
-    pub bookmark: SystemTime,
+    pub bookmark: DateTime<Utc>,
 
     /// Optional field. Determines how frequently new data will be written to the destination. Provided in milliseconds.
     #[serde(default="ten_secs_as_millis")]
@@ -86,13 +86,13 @@ impl SourceOpenTable {
 
 		let ctx = SessionContext::new();
 
-		info!(target: &self.table_name, "Reading data created before {:?}.", system_time_to_string(self.bookmark));
+		info!(target: &self.table_name, "Reading data created before {:?}.", self.bookmark);
 
 		// read the files into a dataframe
         let df = self.read_table(&ctx).await?;
 
         // update the bookmark so the same files aren't read twice
-        self.bookmark = SystemTime::now();
+        self.bookmark = Utc::now();
 
 		Ok(df)
 
@@ -165,7 +165,7 @@ impl SourceOpenTable {
 	/// Return the tables bookmark as a DataFusion Dataframe timestamp
 	fn dataframe_bookmark(&self) -> Expr {
 		
-		let timestamp_seconds: i64 = self.bookmark.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs().try_into().unwrap();
+		let timestamp_seconds: i64 = (self.bookmark - chrono::DateTime::<Utc>::MIN_UTC).num_seconds();
 		Expr::Literal(ScalarValue::TimestampSecond(Some(timestamp_seconds), None))
 
 	}
@@ -187,7 +187,9 @@ impl SourceOpenTable {
     
             if let Ok(metadata) = entry.metadata() {
                 
-                if self.bookmark < metadata.created().unwrap() {
+                let file_created: DateTime<Utc> = metadata.created().unwrap().into();
+
+                if self.bookmark < file_created {
                 	paths.push(entry.path().into_os_string().into_string().unwrap())
                 }
 

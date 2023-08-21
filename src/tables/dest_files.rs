@@ -8,7 +8,7 @@ use log::info;
 use std::io::Error;
 use serde_derive::{ Serialize, Deserialize };
 use std::path::PathBuf;
-use std::time::SystemTime;
+use chrono::{ DateTime, offset::Utc };
 use crate::tables::{ FailAction, LakeFileType };
 use crate::tables::utils::{
 	five_hundred_chars_check, 
@@ -45,7 +45,7 @@ pub struct DestFile {
 
     /// Tracks which files have been read using their created timestamp
     #[serde(default="start_of_time_timestamp")]
-    pub bookmark: SystemTime,
+    pub bookmark: DateTime<Utc>,
 
     /// Optional field. Decide what to do when new data fails to be written to a destination.
     #[serde(default)]
@@ -105,7 +105,7 @@ impl DestFile {
 			LakeFileType::Parquet => df.write_parquet(&filepath, Default::default()).await?,
 		};
 
-        self.bookmark = SystemTime::now();
+        self.bookmark = Utc::now();
 
 		Ok(())
 

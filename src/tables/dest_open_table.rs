@@ -8,7 +8,7 @@ use log::info;
 use std::io::{ Error, ErrorKind };
 use serde_derive::{ Serialize, Deserialize };
 use std::path::PathBuf;
-use std::time::SystemTime;
+use chrono::{ DateTime, offset::Utc };
 use crate::tables::{ FailAction, OpenTableFormat };
 use crate::tables::utils::{
 	five_hundred_chars_check, 
@@ -59,7 +59,7 @@ pub struct DestOpenTable {
 
     /// Tracks which files have been read using their created timestamp
     #[serde(default="start_of_time_timestamp")]
-    pub bookmark: SystemTime,
+    pub bookmark: DateTime<Utc>,
 
     /// Optional field. Decide what to do when new data fails to be written to a destination.
     #[serde(default)]
@@ -105,7 +105,7 @@ impl DestOpenTable {
 
 		match write_result {
 			Ok(_) => {
-				self.bookmark = SystemTime::now();
+				self.bookmark = Utc::now();
 				Ok(())
 			},
 			Err(e) => Err(Error::new(ErrorKind::Other, e.to_string()))

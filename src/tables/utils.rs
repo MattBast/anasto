@@ -5,10 +5,9 @@
 use std::path::PathBuf;
 use serde::de::Error;
 use serde::*;
-use std::time::{ SystemTime, UNIX_EPOCH };
+use chrono::{ DateTime, offset::Utc };
 use rnglib::{RNG, Language};
 use convert_case::{Case, Casing};
-use time::OffsetDateTime;
 
 
 /// Return an error if the string provided is more than 500 characters long
@@ -54,18 +53,11 @@ pub fn path_dir_check<'de, D: Deserializer<'de>>(d: D) -> Result<PathBuf, D::Err
 }
 
 /// Return the timestamp “1970-01-01 00:00:00 UTC”
-pub fn start_of_time_timestamp() -> SystemTime {
-	UNIX_EPOCH
+pub fn start_of_time_timestamp() -> DateTime<Utc> {
+    chrono::DateTime::<Utc>::MIN_UTC
 }
 
 /// Returns 10 seconds as 10,000 milliseconds
 pub fn ten_secs_as_millis() -> u64 {
 	10_000
-}
-
-/// Convert a system time type into a string that can be printed
-pub fn system_time_to_string<T>(dt: T) -> String
-   where T: Into<OffsetDateTime>
-{
-    dt.into().to_string()
 }

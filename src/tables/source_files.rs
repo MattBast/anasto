@@ -17,6 +17,7 @@ use crate::tables::utils::{
 	random_table_name, 
 	path_dir_check,
 	ten_secs_as_millis,
+	start_of_time_timestamp
 };
 use datafusion::prelude::{ SessionContext, DataFrame };
 use datafusion::error::Result;
@@ -53,12 +54,6 @@ pub struct SourceFiles {
     #[serde(default)]
     pub on_fail: FailAction,
 
-}
-
-
-/// Return the timestamp “1970-01-01 00:00:00 UTC”
-pub fn start_of_time_timestamp() -> DateTime<Utc> {
-	chrono::DateTime::<Utc>::MIN_UTC
 }
 
 
