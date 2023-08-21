@@ -21,6 +21,9 @@ pub mod dest_open_table;
 pub mod source_tables;
 pub mod dest_tables;
 
+/// A helper struct for creating and deleting files needed by test functions
+pub mod test_utils;
+
 
 /// This enum defines the actions that a Table can take when it handles an error
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]

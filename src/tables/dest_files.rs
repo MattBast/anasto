@@ -113,16 +113,16 @@ impl DestFile {
 
 }
 
-// #[cfg(test)]
-// mod tests {
-// 	use super::*;
+#[cfg(test)]
+mod tests {
+	// use super::*;
+	use crate::tables::test_utils::TestFile;
 
-//     #[test]
-//     fn can_read_files() {
+    #[test]
+    fn util_test() {
     
-//         let subscriber = File { dirpath: PathBuf::new(".") };
-//         subscriber.poll_action();
+        let _file_context = TestFile::new("./tests/data/test/");
 
-//     }
+    }
 
-// }
+}
