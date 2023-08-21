@@ -9,15 +9,14 @@
 use log::{ info, warn };
 use serde_derive::{ Serialize, Deserialize };
 use std::path::PathBuf;
-use std::time::{SystemTime, Duration};
+use chrono::{ DateTime, offset::Utc };
+use std::time::Duration;
 use crate::tables::{ FailAction, LakeFileType };
 use crate::tables::utils::{
 	five_hundred_chars_check, 
 	random_table_name, 
 	path_dir_check,
-	start_of_time_timestamp,
 	ten_secs_as_millis,
-	system_time_to_string
 };
 use datafusion::prelude::{ SessionContext, DataFrame };
 use datafusion::error::Result;
@@ -44,7 +43,7 @@ pub struct SourceFiles {
 
     /// Tracks which files have been read using their created timestamp
     #[serde(default="start_of_time_timestamp")]
-    pub bookmark: SystemTime,
+    pub bookmark: DateTime<Utc>,
 
     /// Optional field. Determines how frequently new data will be written to the destination. Provided in milliseconds.
     #[serde(default="ten_secs_as_millis")]
@@ -54,6 +53,12 @@ pub struct SourceFiles {
     #[serde(default)]
     pub on_fail: FailAction,
 
+}
+
+
+/// Return the timestamp “1970-01-01 00:00:00 UTC”
+pub fn start_of_time_timestamp() -> DateTime<Utc> {
+	chrono::DateTime::<Utc>::MIN_UTC
 }
 
 
@@ -81,7 +86,7 @@ impl SourceFiles {
 
 		let ctx = SessionContext::new();
 
-		info!(target: &self.table_name, "Reading files from {} created before {:?}.", self.dirpath.display(), system_time_to_string(self.bookmark));
+		info!(target: &self.table_name, "Reading files from {} created before {:?}.", self.dirpath.display(), self.bookmark);
 
 		// get all new or newly modified files
 		let file_paths = self.get_unread_filepaths()?;
@@ -93,7 +98,7 @@ impl SourceFiles {
         let df = self.read_files(&ctx, file_paths).await?;
 
         // update the bookmark so the same files aren't read twice
-        self.bookmark = SystemTime::now();
+        self.bookmark = Utc::now();
 
 		Ok((true, df))
 
@@ -108,7 +113,9 @@ impl SourceFiles {
     
             if let Ok(metadata) = entry.metadata() {
                 
-                if self.bookmark < metadata.created().unwrap() {
+                let file_created: DateTime<Utc> = metadata.created().unwrap().into();
+
+                if self.bookmark < file_created {
                 	paths.push(entry.path().into_os_string().into_string().unwrap())
                 }
 
@@ -147,10 +154,10 @@ impl SourceFiles {
 mod tests {
 	use super::*;
 	use std::sync::Arc;
-	use std::time::UNIX_EPOCH;
 	use std::matches;
 	use arrow_array::{ RecordBatch, StringArray, Int64Array, Int32Array };
 	use arrow_schema::{ Schema, Field, DataType };
+	use chrono::naive::NaiveDate;
 	
 
     #[test]
@@ -166,7 +173,7 @@ mod tests {
         assert_eq!(table.table_name, "csv_table");
         assert_eq!(table.dirpath, PathBuf::from("./tests/data/csv_table/").canonicalize().unwrap());
         assert!(matches!(table.filetype, LakeFileType::Csv));
-        assert_eq!(table.bookmark, UNIX_EPOCH);
+        assert_eq!(table.bookmark, chrono::DateTime::<Utc>::MIN_UTC);
         assert_eq!(table.poll_interval, 10_000);
         assert!(matches!(table.on_fail, FailAction::Stop));
 
@@ -179,6 +186,7 @@ mod tests {
             table_name = "csv_table"
             dirpath = "./tests/data/csv_table/" 
             filetype = "csv"
+            bookmark = "2023-08-21T00:55:00z"
             poll_interval = 5000
             on_fail = "skip"
         "#);
@@ -188,9 +196,12 @@ mod tests {
         assert_eq!(table.table_name, "csv_table");
         assert_eq!(table.dirpath, PathBuf::from("./tests/data/csv_table/").canonicalize().unwrap());
         assert!(matches!(table.filetype, LakeFileType::Csv));
-        assert_eq!(table.bookmark, UNIX_EPOCH);
         assert_eq!(table.poll_interval, 5000);
         assert!(matches!(table.on_fail, FailAction::Skip));
+
+        let naivedatetime_utc = NaiveDate::from_ymd_opt(2023, 8, 21).unwrap().and_hms_opt(0, 55, 0).unwrap();
+		let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, Utc);
+        assert_eq!(table.bookmark, datetime_utc);
 
     }
 
@@ -358,6 +369,7 @@ mod tests {
         assert!(read_success);
         assert_eq!(df_data[0], batch_one);
         assert_eq!(df_data[1], batch_two);
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
 
     }
 
