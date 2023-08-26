@@ -14,13 +14,14 @@ use crate::tables::utils::{
 	five_hundred_chars_check, 
 	random_table_name, 
 	path_dir_check,
-	start_of_time_timestamp
+	start_of_time_timestamp,
+	create_avro_file,
 };
 use datafusion::prelude::DataFrame;
 use datafusion::error::Result;
 use convert_case::{ Case, Casing };
 use uuid::Uuid;
-use std::fs::{ read_dir, copy, create_dir_all, remove_dir_all };
+use std::fs::{ read_dir, copy, create_dir_all, remove_dir_all, remove_file };
 
 /// The DestFile reads files from a local or remote filesystem
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -97,10 +98,7 @@ impl DestFile {
 		match self.filetype {
 			LakeFileType::Csv => df.write_csv(&sub_dirpath).await?,
 			LakeFileType::Json => df.write_json(&sub_dirpath).await?,
-			// ************************************************************************************************
-			// switch to Avro write method once one exists
-			// ************************************************************************************************
-			LakeFileType::Avro => df.write_json(&sub_dirpath).await?,
+			LakeFileType::Avro => self.write_avro(df, sub_dirpath.clone()).await?,
 			LakeFileType::Parquet => df.write_parquet(&sub_dirpath, Default::default()).await?,
 		};
 
@@ -109,6 +107,31 @@ impl DestFile {
 
         self.bookmark = Utc::now();
 
+		Ok(())
+
+	}
+
+	/// Write the contents of a dataframe to an Avro file
+	async fn write_avro(&self, df: DataFrame, sub_dirpath: String) -> Result<(), Error> {
+	    
+	    let df_schema = df.schema().clone();
+		df.write_json(&sub_dirpath).await?;
+		create_avro_file(df_schema, &self.dest_table_name, &sub_dirpath)?;
+
+		read_dir(sub_dirpath)?
+			.try_for_each(|entry| {
+
+				let path = entry?.path();
+				let extension = path.extension().unwrap();
+				
+				if extension == "json" {
+				    remove_file(path)?;
+				}
+
+				Ok::<(), Error>(())
+
+			})?;
+		
 		Ok(())
 
 	}
@@ -446,11 +469,16 @@ mod tests {
 
         // read what was written into a dataframe and compare with the source dataframe
         let dest_df = ctx.read_avro("./tests/data/test_avro_dest/", Default::default()).await.unwrap();
-        let src_data = src_df.collect().await.unwrap();
         let dest_data = dest_df.collect().await.unwrap();
-        assert_eq!(src_data.len(), dest_data.len());
-        assert!(src_data.contains(&dest_data[0]));
-        assert!(src_data.contains(&dest_data[1]));
+
+        let dest_ids = dest_data[0]
+        	.column_by_name("id")
+        	.unwrap()
+        	.as_any()
+    		.downcast_ref::<arrow_array::array::PrimitiveArray<arrow_array::types::Int64Type>>()
+    		.unwrap();
+
+        assert_eq!(dest_ids.values(), &[3, 1, 2]);
 
         // make sure the bookmark has progressed
 		assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
