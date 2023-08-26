@@ -103,7 +103,7 @@ impl DestFile {
 		};
 
 		// move the new data files out of their temporary folder
-		self.move_files(sub_dirpath, self.dirpath.clone())?;
+		move_files(sub_dirpath, self.dirpath.clone())?;
 
         self.bookmark = Utc::now();
 
@@ -136,30 +136,30 @@ impl DestFile {
 
 	}
 
-	/// Move the new data files out of their temporary folder
-	fn move_files(&self, src: impl AsRef<Path> + Clone, dest: impl AsRef<Path>) -> Result<(), Error> {
-	    
-	    create_dir_all(&dest)?;
+}
 
-	    for entry in read_dir(src.clone())? {
-	        
-	        let entry = entry?;
-	        let ty = entry.file_type()?;
-	        
-	        if ty.is_dir() {
-	            self.move_files(entry.path(), dest.as_ref().join(entry.file_name()))?;
-	        } else {
-	            let new_filename = format!("{}.{}", Uuid::new_v4().to_string(), entry.path().extension().unwrap().to_str().unwrap());
-	            let _ = copy(entry.path(), dest.as_ref().join(new_filename))?;
-	        }
+/// Move the new data files out of their temporary folder
+fn move_files(src: impl AsRef<Path> + Clone, dest: impl AsRef<Path>) -> Result<(), Error> {
+    
+    create_dir_all(&dest)?;
 
-	    }
+    for entry in read_dir(src.clone())? {
+        
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        
+        if ty.is_dir() {
+            move_files(entry.path(), dest.as_ref().join(entry.file_name()))?;
+        } else {
+            let new_filename = format!("{}.{}", Uuid::new_v4(), entry.path().extension().unwrap().to_str().unwrap());
+            let _ = copy(entry.path(), dest.as_ref().join(new_filename))?;
+        }
 
-	    remove_dir_all(src)?;
+    }
 
-	    Ok(())
+    remove_dir_all(src)?;
 
-	}
+    Ok(())
 
 }
 

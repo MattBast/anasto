@@ -82,10 +82,10 @@ pub fn ten_secs_as_millis() -> u64 {
 }
 
 /// Read all json files under the provided dirpath and write their content to an Avro file
-pub fn create_avro_file(df_schema: DFSchema, table_name: &String, dirpath: &String) -> Result<(), std::io::Error> {
+pub fn create_avro_file(df_schema: DFSchema, table_name: &str, dirpath: &String) -> Result<(), std::io::Error> {
 
     // get the schema from the first record in the vector
-    let schema = avro_schema_from(df_schema, table_name.clone());
+    let schema = avro_schema_from(df_schema, table_name.to_owned());
 
     let mut writer = AvroWriter::with_codec(&schema, Vec::new(), Codec::Snappy);
 
@@ -108,7 +108,7 @@ pub fn create_avro_file(df_schema: DFSchema, table_name: &String, dirpath: &Stri
 
     // create and write all content to the file
     let file_path = format!("{}/{}.avro", dirpath, Uuid::new_v4());
-    std::fs::write(&file_path, writer.into_inner().unwrap())?;
+    std::fs::write(file_path, writer.into_inner().unwrap())?;
 
     Ok(())
 
@@ -211,10 +211,9 @@ fn avro_record_from(fields: Vec<(&arrow_schema::DataType, &String)>, record_name
 
     let mut avro_fields = Vec::new();
     let mut lookup_map = BTreeMap::new();
-    let mut pos = 0;
 
     // generate list of avro record fields and a lookup map
-    for field in fields.iter() {
+    for (pos, field) in fields.iter().enumerate() {
         
         let (data_type, field_name) = field;
 
@@ -230,8 +229,6 @@ fn avro_record_from(fields: Vec<(&arrow_schema::DataType, &String)>, record_name
         });
 
         let _ = lookup_map.insert(field_name.to_string(), pos);
-
-        pos += 1;
 
     }
 
