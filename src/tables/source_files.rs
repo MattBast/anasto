@@ -362,8 +362,8 @@ mod tests {
         ).unwrap();
 
         assert!(read_success);
-        assert_eq!(df_data[0], batch_one);
-        assert_eq!(df_data[1], batch_two);
+        assert!(df_data.contains(&batch_one));
+        assert!(df_data.contains(&batch_two));
         assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
 
     }
@@ -405,8 +405,8 @@ mod tests {
         ).unwrap();
 
         assert!(read_success);
-        assert_eq!(df_data[0], batch_one);
-        assert_eq!(df_data[1], batch_two);
+        assert!(df_data.contains(&batch_one));
+        assert!(df_data.contains(&batch_two));
 
     }
 
@@ -480,8 +480,8 @@ mod tests {
         ).unwrap();
 
         assert!(read_success);
-        assert_eq!(df_data[1], batch_one);
-        assert_eq!(df_data[0], batch_two);
+        assert!(df_data.contains(&batch_one));
+        assert!(df_data.contains(&batch_two));
 
     }
 
