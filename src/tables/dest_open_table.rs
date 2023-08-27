@@ -42,11 +42,11 @@ pub struct DestOpenTable {
 	
 	/// A user defined name for the table. This does not need to correlate
 	/// with the directory path where the tables files will be written to.
-    #[serde(deserialize_with="to_snake_case")]
+    #[serde(deserialize_with="to_snake_case", default="random_table_name")]
 	pub dest_table_name: String,
 
 	/// The name of the source table that supplies this destination table
-    #[serde(deserialize_with="five_hundred_chars_check", default="random_table_name")]
+    #[serde(deserialize_with="five_hundred_chars_check")]
 	pub source_table_name: String,
 
 	/// The parent filepath where all data this DestOpenTable handles will be written to
@@ -260,16 +260,240 @@ impl DestOpenTable {
 
 }
 
-// #[cfg(test)]
-// mod tests {
-// 	use super::*;
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use chrono::naive::NaiveDate;
+	use crate::tables::test_utils::TestDir;
+	use datafusion::prelude::SessionContext;
+	use std::sync::Arc;
+	use arrow_array::{ RecordBatch, StringArray, Int64Array };
+	use arrow_schema::{ Schema, Field, DataType };
 
-//     #[test]
-//     fn can_read_files() {
+
+    #[test]
+    fn table_from_toml_with_minimal_config() {
     
-//         let subscriber = File { dirpath: PathBuf::new(".") };
-//         subscriber.poll_action();
+        let content = String::from(r#"
+            source_table_name = "json_table"
+			dirpath = "./tests/data/delta_table/"
+        "#);
 
-//     }
+        let table: DestOpenTable = toml::from_str(&content).unwrap();
 
-// }
+        assert!(!table.dest_table_name.is_empty());
+        assert_eq!(table.source_table_name, "json_table");
+        assert_eq!(table.dirpath, PathBuf::from("./tests/data/delta_table/").canonicalize().unwrap());
+        assert!(matches!(table.format, OpenTableFormat::DeltaLake));
+        assert_eq!(table.bookmark, chrono::DateTime::<Utc>::MIN_UTC);
+        assert!(matches!(table.on_fail, FailAction::Stop));
+
+    }
+
+    #[test]
+    fn table_from_toml_with_maximum_config() {
+    
+        let content = String::from(r#"
+            source_table_name = "json_table"
+            dest_table_name = "delta_table"
+            dirpath = "./tests/data/delta_table/"
+            format = "delta_lake"
+            bookmark = "2023-08-21T00:55:00z"
+            on_fail = "skip"
+        "#);
+
+        let table: DestOpenTable = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.dest_table_name, "delta_table");
+        assert_eq!(table.source_table_name, "json_table");
+        assert_eq!(table.dirpath, PathBuf::from("./tests/data/delta_table/").canonicalize().unwrap());
+        assert!(matches!(table.format, OpenTableFormat::DeltaLake));
+        assert!(matches!(table.on_fail, FailAction::Skip));
+
+        let naivedatetime_utc = NaiveDate::from_ymd_opt(2023, 8, 21).unwrap().and_hms_opt(0, 55, 0).unwrap();
+		let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, Utc);
+        assert_eq!(table.bookmark, datetime_utc);
+
+    }
+
+    #[test]
+    fn missing_mandatory_field() {
+    
+        let content = String::from(r#"
+            dest_table_name = "delta_table"
+            dirpath = "./tests/data/delta_table/"
+        "#);
+
+        let table: Result<DestOpenTable, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "missing field `source_table_name`", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn dirpath_does_not_exist() {
+    
+        let content = String::from(r#"
+            source_table_name = "json_table"
+            dirpath = "./tests/data/does_not_exist/" 
+        "#);
+
+        let table: Result<DestOpenTable, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "The path: ./tests/data/does_not_exist/ does not exist.", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn dirpath_is_not_a_directory() {
+    
+        let content = String::from(r#"
+            source_table_name = "json_table"
+            dirpath = "./tests/data/delta_table/part-00000-7444aec4-710a-4a4c-8abe-3323499043e9.c000.snappy.parquet" 
+        "#);
+
+        let table: Result<DestOpenTable, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "The path: ./tests/data/delta_table/part-00000-7444aec4-710a-4a4c-8abe-3323499043e9.c000.snappy.parquet is not a directory.", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+     #[test]
+    fn typo_in_fieldname() {
+    
+        let content = String::from(r#"
+            source_table_name = "json_table"
+            dirpath = "./tests/data/delta_table/"
+            filepath = "json"
+        "#);
+
+        let table: Result<DestOpenTable, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "unknown field `filepath`, expected one of `dest_table_name`, `source_table_name`, `dirpath`, `format`, `bookmark`, `on_fail`", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn table_name_contains_too_many_characters() {
+    
+        let content = String::from(r#"
+            source_table_name = "name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name"
+            dirpath = "./tests/data/delta_table/part-00000-7444aec4-710a-4a4c-8abe-3323499043e9.c000.snappy.parquet" 
+        "#);
+
+        let table: Result<DestOpenTable, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(
+        		e.message(), 
+        		"The string: name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name is longer than 500 chars.", 
+        		"Incorrect error message."
+        	),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn source_table_name_function_returns_source_table_name() {
+    
+        let content = String::from(r#"
+            source_table_name = "json_table"
+            dirpath = "./tests/data/delta_table/"
+        "#);
+
+        let table: DestOpenTable = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.src_table_name(), "json_table");
+
+    }
+
+    #[test]
+    fn dest_table_name_function_returns_dest_table_name() {
+    
+        let content = String::from(r#"
+            source_table_name = "json_table"
+            dest_table_name = "delta_table"
+            dirpath = "./tests/data/delta_table/"
+        "#);
+
+        let table: DestOpenTable = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.dest_table_name(), "delta_table");
+
+    }
+
+    #[test]
+    fn on_fail_function_returns_fail_action() {
+    
+        let content = String::from(r#"
+            source_table_name = "json_table"
+            dirpath = "./tests/data/delta_table/"
+        "#);
+
+        let table: DestOpenTable = toml::from_str(&content).unwrap();
+
+        assert!(matches!(table.on_fail(), FailAction::Stop));
+
+    }
+
+    #[tokio::test]
+    async fn can_write_delta_table() {
+    
+    	// create diectory for destinsation table that tears itself down at the end of the test
+        let _test_dir = TestDir::new("./tests/data/test_delta_dest/");
+
+        // create the destination table
+        let mut table: DestOpenTable = toml::from_str(&String::from(r#"
+            source_table_name = "csv_table"
+            dirpath = "./tests/data/test_delta_dest/"
+        "#)).unwrap();
+
+        // setup mock source table
+        let ctx = SessionContext::new();
+        let src_df = ctx.read_csv("./tests/data/csv_table/", Default::default()).await.unwrap();
+
+        // create received source data to a destination
+        table.write_new_data(src_df.clone()).await.unwrap();
+
+        // read what was written into a dataframe and compare with the source dataframe
+		let dest_delta_table = deltalake::open_table("./tests/data/test_delta_dest")
+		    .await
+		    .unwrap();
+		let dest_df = ctx.read_table(Arc::new(dest_delta_table)).unwrap();
+        let dest_data = dest_df.collect().await.unwrap();
+
+        // create the expected contents of the dataframe (as record batches)
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, true),
+            Field::new("value", DataType::Utf8, true),
+        ]));
+
+        let expected_batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int64Array::from(vec![1, 2, 3])),
+                Arc::new(StringArray::from(vec!["hello world", "hey there", "hi"])),
+            ],
+        ).unwrap();
+
+        assert_eq!(dest_data[0], expected_batch);
+
+        // make sure the bookmark has progressed
+		assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+
+    }
+
+}
