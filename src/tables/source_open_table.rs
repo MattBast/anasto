@@ -207,16 +207,222 @@ impl SourceOpenTable {
 
 }
 
-// #[cfg(test)]
-// mod tests {
-// 	use super::*;
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::sync::Arc;
+	use std::matches;
+	use arrow_array::{ RecordBatch, StringArray, Int32Array, PrimitiveArray, types::TimestampSecondType };
+	use arrow_schema::{ Schema, Field, DataType, TimeUnit };
+	use chrono::naive::NaiveDate;
+	
 
-//     #[test]
-//     fn can_read_files() {
+    #[test]
+    fn table_from_toml_with_minimal_config() {
     
-//         let subscriber = File { dirpath: PathBuf::new(".") };
-//         subscriber.poll_action();
+        let content = String::from(r#"
+            table_name = "delta_table"
+            dirpath = "./tests/data/delta_table/" 
+        "#);
 
-//     }
+        let table: SourceOpenTable = toml::from_str(&content).unwrap();
 
-// }
+        assert_eq!(table.table_name, "delta_table");
+        assert_eq!(table.dirpath, PathBuf::from("./tests/data/delta_table/").canonicalize().unwrap());
+        assert!(matches!(table.format, OpenTableFormat::DeltaLake));
+        assert_eq!(table.bookmark, chrono::DateTime::<Utc>::MIN_UTC);
+        assert_eq!(table.poll_interval, 10_000);
+        assert!(matches!(table.on_fail, FailAction::Stop));
+
+    }
+
+    #[test]
+    fn table_from_toml_with_maximum_config() {
+    
+        let content = String::from(r#"
+            table_name = "delta_table"
+            dirpath = "./tests/data/delta_table/" 
+            format = "delta_lake"
+            bookmark = "2023-08-21T00:55:00z"
+            poll_interval = 5000
+            on_fail = "skip"
+        "#);
+
+        let table: SourceOpenTable = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.table_name, "delta_table");
+        assert_eq!(table.dirpath, PathBuf::from("./tests/data/delta_table/").canonicalize().unwrap());
+        assert!(matches!(table.format, OpenTableFormat::DeltaLake));
+        assert_eq!(table.poll_interval, 5000);
+        assert!(matches!(table.on_fail, FailAction::Skip));
+
+        let naivedatetime_utc = NaiveDate::from_ymd_opt(2023, 8, 21).unwrap().and_hms_opt(0, 55, 0).unwrap();
+		let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, Utc);
+        assert_eq!(table.bookmark, datetime_utc);
+
+    }
+
+    #[test]
+    fn missing_mandatory_field() {
+    
+        let content = String::from(r#"
+            table_name = "delta_table"
+        "#);
+
+        let table: Result<SourceOpenTable, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "missing field `dirpath`", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn dirpath_does_not_exist() {
+    
+        let content = String::from(r#"
+            dirpath = "./tests/data/does_not_exist/" 
+        "#);
+
+        let table: Result<SourceOpenTable, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "The path: ./tests/data/does_not_exist/ does not exist.", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn dirpath_is_not_a_directory() {
+    
+        let content = String::from(r#"
+            dirpath = "./tests/data/delta_table/part-00000-7444aec4-710a-4a4c-8abe-3323499043e9.c000.snappy.parquet" 
+        "#);
+
+        let table: Result<SourceOpenTable, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "The path: ./tests/data/delta_table/part-00000-7444aec4-710a-4a4c-8abe-3323499043e9.c000.snappy.parquet is not a directory.", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+     #[test]
+    fn typo_in_fieldname() {
+    
+        let content = String::from(r#"
+            dirpath = "./tests/data/json_table/"
+            filetype = "parquet"
+        "#);
+
+        let table: Result<SourceOpenTable, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "unknown field `filetype`, expected one of `table_name`, `dirpath`, `format`, `bookmark`, `poll_interval`, `on_fail`, `first_read`", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn table_name_contains_too_many_characters() {
+    
+        let content = String::from(r#"
+            table_name = "name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name"
+            dirpath = "./tests/data/delta_table/" 
+        "#);
+
+        let table: Result<SourceOpenTable, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(
+        		e.message(), 
+        		"The string: name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name is longer than 500 chars.", 
+        		"Incorrect error message."
+        	),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn table_name_function_returns_table_name() {
+    
+        let content = String::from(r#"
+            table_name = "delta_table"
+            dirpath = "./tests/data/delta_table/" 
+        "#);
+
+        let table: SourceOpenTable = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.table_name(), "delta_table");
+
+    }
+
+    #[test]
+    fn on_fail_function_returns_fail_action() {
+    
+        let content = String::from(r#"
+            dirpath = "./tests/data/delta_table/" 
+        "#);
+
+        let table: SourceOpenTable = toml::from_str(&content).unwrap();
+
+        assert!(matches!(table.on_fail(), FailAction::Stop));
+
+    }
+
+    #[test]
+    fn poll_interval_function_returns_correct_duration() {
+    
+        let content = String::from(r#"
+            dirpath = "./tests/data/delta_table/" 
+        "#);
+
+        let table: SourceOpenTable = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.poll_interval(), Duration::from_millis(10_000));
+
+    }
+
+    #[tokio::test]
+    async fn can_read_delta_table() {
+    
+    	// define table config (mostly default config pointing at data in csv files)
+        let content = String::from(r#"
+            dirpath = "./tests/data/delta_table/" 
+        "#);
+
+        // create the table and read its data as a dataframe
+        let mut table: SourceOpenTable = toml::from_str(&content).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        // create the expected contents of the dataframe (as record batches)
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, true),
+            Field::new("name", DataType::Utf8, true),
+            Field::new("_change_type", DataType::Utf8, false),
+            Field::new("_commit_timestamp", DataType::Timestamp(TimeUnit::Second, None), false),
+        ]));
+
+        let batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int32Array::from(vec![0])),
+                Arc::new(StringArray::from(vec!["Mino"])),
+                Arc::new(StringArray::from(vec!["insert"])),
+                Arc::new(PrimitiveArray::<TimestampSecondType>::from(vec![0])),
+            ],
+        ).unwrap();
+
+        assert!(read_success);
+        assert_eq!(df_data[0], batch);
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+
+    }
+
+}
