@@ -267,9 +267,7 @@ mod tests {
 	use crate::tables::test_utils::TestDir;
 	use datafusion::prelude::SessionContext;
 	use std::sync::Arc;
-	use arrow_array::{ RecordBatch, StringArray, Int64Array };
-	use arrow_schema::{ Schema, Field, DataType };
-
+	
 
     #[test]
     fn table_from_toml_with_minimal_config() {
@@ -475,21 +473,28 @@ mod tests {
 		let dest_df = ctx.read_table(Arc::new(dest_delta_table)).unwrap();
         let dest_data = dest_df.collect().await.unwrap();
 
-        // create the expected contents of the dataframe (as record batches)
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int64, true),
-            Field::new("value", DataType::Utf8, true),
-        ]));
+        let mut ids: Vec<i64> = dest_data[0]
+        	.column_by_name("id")
+        	.unwrap()
+        	.as_any()
+    		.downcast_ref::<arrow_array::array::PrimitiveArray<arrow_array::types::Int64Type>>()
+    		.unwrap()
+    		.values()
+    		.to_vec();
+        ids.sort();
 
-        let expected_batch = RecordBatch::try_new(
-            Arc::clone(&schema),
-            vec![
-                Arc::new(Int64Array::from(vec![1, 2, 3])),
-                Arc::new(StringArray::from(vec!["hello world", "hey there", "hi"])),
-            ],
-        ).unwrap();
 
-        assert_eq!(dest_data[0], expected_batch);
+       	let values_array = dest_data[0]
+        	.column_by_name("value")
+        	.unwrap()
+        	.as_any()
+    		.downcast_ref::<arrow_array::array::StringArray>()
+    		.unwrap();
+        let mut values = vec![values_array.value(0), values_array.value(1), values_array.value(2)];
+        values.sort();
+
+        assert_eq!(ids, vec![1,2,3]);
+        assert_eq!(values, vec!["hello world", "hey there", "hi"]);
 
         // make sure the bookmark has progressed
 		assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);

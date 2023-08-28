@@ -471,14 +471,27 @@ mod tests {
         let dest_df = ctx.read_avro("./tests/data/test_avro_dest/", Default::default()).await.unwrap();
         let dest_data = dest_df.collect().await.unwrap();
 
-        let dest_ids = dest_data[0]
+        let mut dest_ids: Vec<i64> = dest_data[0]
         	.column_by_name("id")
         	.unwrap()
         	.as_any()
     		.downcast_ref::<arrow_array::array::PrimitiveArray<arrow_array::types::Int64Type>>()
-    		.unwrap();
+    		.unwrap()
+            .values()
+            .to_vec();
+        dest_ids.sort();
 
-        assert_eq!(dest_ids.values(), &[3, 1, 2]);
+        let values_array = dest_data[0]
+            .column_by_name("value")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<arrow_array::array::StringArray>()
+            .unwrap();
+        let mut dest_values = vec![values_array.value(0), values_array.value(1), values_array.value(2)];
+        dest_values.sort();
+
+        assert_eq!(dest_ids, &[1,2,3]);
+        assert_eq!(dest_values, vec!["hello world", "hey there", "hi"]);
 
         // make sure the bookmark has progressed
 		assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);

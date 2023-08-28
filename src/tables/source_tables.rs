@@ -230,3 +230,37 @@ impl SourceTable {
 	}
 
 }
+
+// #[cfg(test)]
+// mod tests {
+//     // use super::*;
+
+//     #[tokio::test]
+//     async fn register_adds_table_to_catalog() {
+    
+//         unimplemented!()
+
+//     }
+
+//     #[tokio::test]
+//     async fn update_catalog() {
+    
+//         unimplemented!()
+
+//     }
+
+//     #[tokio::test]
+//     async fn new_data_is_sent_to_destinations() {
+    
+//         unimplemented!()
+
+//     }
+
+//     #[tokio::test]
+//     async fn start_function_begins_polling_correctly() {
+    
+//         unimplemented!()
+
+//     }
+
+// }
