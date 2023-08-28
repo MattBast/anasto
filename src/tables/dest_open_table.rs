@@ -483,7 +483,6 @@ mod tests {
     		.to_vec();
         ids.sort();
 
-
        	let values_array = dest_data[0]
         	.column_by_name("value")
         	.unwrap()

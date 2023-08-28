@@ -50,7 +50,7 @@ impl SourceTable {
 
         // Add the table to the catalog. Only continue if another 
         // table with the same name doesn't already exist
-        if table.register(catalog.clone()).is_err() {
+        if table.register(&catalog).is_err() {
             panic!("Failed to start a source table.");
         };
 
@@ -82,7 +82,7 @@ impl SourceTable {
                     
                     if !new_data { continue }
 
-                    match self.update_catalog(catalog.clone(), df.schema().clone()) {
+                    match self.update_catalog(&catalog, df.schema()) {
                                     
                         Ok(dest_txs) => if let Err(e) = self.send_new_data(dest_txs, df) {
     
@@ -144,7 +144,7 @@ impl SourceTable {
     }
 
     /// Add the table to the internal data catalog
-    fn register(&self, catalog: Catalog) -> Result<(), Error> {
+    fn register(&self, catalog: &Catalog) -> Result<(), Error> {
         
         let entry = (None, Vec::new());
         match catalog.insert(self.table_name().clone(), entry) {
@@ -170,9 +170,9 @@ impl SourceTable {
 	}
 
     /// Update the data catalog if the schema changes
-    fn update_catalog(&self, catalog: Catalog, schema: DFSchema) -> Result<Vec<UnboundedSender<DataFrame>>, Error> {
+    fn update_catalog(&self, catalog: &Catalog, schema: &DFSchema) -> Result<Vec<UnboundedSender<DataFrame>>, Error> {
         
-        if let Some(mut entry) = catalog.clone().get_mut(self.table_name()) {
+        if let Some(mut entry) = catalog.get_mut(self.table_name()) {
             
             let (old_schema, destinations) = entry.clone();
 
@@ -180,13 +180,13 @@ impl SourceTable {
                 
                 // check new schema against old schema for compatibility
                 Some(mut old_schema) => {
-                    old_schema.merge(&schema);
+                    old_schema.merge(schema);
                     entry.0 = Some(old_schema); 
                 },
 
                 // if schema does not yet exist, create it
                 None => {
-                    entry.0 = Some(schema);
+                    entry.0 = Some(schema.clone());
                 },
             };
 
@@ -195,11 +195,10 @@ impl SourceTable {
         }
         else {
             
-            self.register(catalog)?;
-            Ok(Vec::new())
+            self.register(&catalog)?;
+            self.update_catalog(catalog, schema)
 
         }
-
 
     }
 
@@ -231,36 +230,213 @@ impl SourceTable {
 
 }
 
-// #[cfg(test)]
-// mod tests {
-//     // use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashmap::DashMap;
+    use tokio::sync::mpsc::unbounded_channel;
+    use arrow_schema::{ DataType, Field };
 
-//     #[tokio::test]
-//     async fn register_adds_table_to_catalog() {
+    #[tokio::test]
+    async fn register_adds_table_to_catalog() {
     
-//         unimplemented!()
+        // create a mock data catalog for Anasto
+        let catalog: Catalog = DashMap::new().into();
 
-//     }
+        // load a mock files type of source table  
+        let table: SourceTable = toml::from_str(&String::from(r#"
+            type = "files"
+            table_name = "test_csv"
+            dirpath = "./tests/data/csv_table/" 
+        "#)).unwrap();
 
-//     #[tokio::test]
-//     async fn update_catalog() {
+        // add the mock table to the catalog
+        table.register(&catalog).unwrap();
+
+        let (schema, destinations) = catalog.get("test_csv").unwrap().clone();
+        assert_eq!(schema, None);
+        assert!(destinations.is_empty());
+
+    }
+
+    #[tokio::test]
+    async fn register_rejects_duplicate_table_names() {
     
-//         unimplemented!()
+        // create a mock data catalog for Anasto
+        let catalog: Catalog = DashMap::new().into();
 
-//     }
+        // load a mock files type of source table  
+        let table_one: SourceTable = toml::from_str(&String::from(r#"
+            type = "files"
+            table_name = "test_table"
+            dirpath = "./tests/data/csv_table/" 
+        "#)).unwrap();
 
-//     #[tokio::test]
-//     async fn new_data_is_sent_to_destinations() {
+        // create second table with the same name
+        let table_two: SourceTable = toml::from_str(&String::from(r#"
+            type = "files"
+            table_name = "test_table"
+            dirpath = "./tests/data/json_table/" 
+            filetype = "json"
+        "#)).unwrap();
+
+        // add the mock table to the catalog
+        let register_one_result = table_one.register(&catalog);
+        let register_two_result = table_two.register(&catalog);
+
+        assert!(register_one_result.is_ok());
+        assert!(register_two_result.is_err());
+
+    }
+
+    #[tokio::test]
+    async fn update_catalog() {
     
-//         unimplemented!()
+        // create a mock data catalog for Anasto
+        let catalog: Catalog = DashMap::new().into();
 
-//     }
+        // load a mock files type of source table  
+        let mut table: SourceTable = toml::from_str(&String::from(r#"
+            type = "files"
+            table_name = "test_csv"
+            dirpath = "./tests/data/csv_table/" 
+        "#)).unwrap();
 
-//     #[tokio::test]
-//     async fn start_function_begins_polling_correctly() {
+        // generate a dataframe for the table
+        let (_read_success, df) = table.read_new_data().await.unwrap();
+
+        // add the mock table to the catalog and update its schema
+        table.register(&catalog).unwrap();
+        let _ = table.update_catalog(&catalog, df.schema()).unwrap();
+
+        let (schema, destinations) = catalog.get("test_csv").unwrap().clone();
+        assert_eq!(schema, Some(df.schema().clone()));
+        assert!(destinations.is_empty());
+
+    }
+
+    #[tokio::test]
+    async fn update_catalog_performs_register_if_table_does_not_exist() {
     
-//         unimplemented!()
+        // create a mock data catalog for Anasto
+        let catalog: Catalog = DashMap::new().into();
 
-//     }
+        // load a mock files type of source table  
+        let mut table: SourceTable = toml::from_str(&String::from(r#"
+            type = "files"
+            table_name = "test_csv"
+            dirpath = "./tests/data/csv_table/" 
+        "#)).unwrap();
 
-// }
+        // generate a dataframe for the table
+        let (_read_success, df) = table.read_new_data().await.unwrap();
+
+        // add the mock table to the catalog and update its schema
+        let _ = table.update_catalog(&catalog, df.schema()).unwrap();
+
+        let (schema, destinations) = catalog.get("test_csv").unwrap().clone();
+        assert_eq!(schema, Some(df.schema().clone()));
+        assert!(destinations.is_empty());
+
+    }
+
+    #[tokio::test]
+    async fn update_catalog_can_update_schemas() {
+    
+        // create a mock data catalog for Anasto
+        let catalog: Catalog = DashMap::new().into();
+
+        // load a mock files type of source table  
+        let table: SourceTable = toml::from_str(&String::from(r#"
+            type = "files"
+            table_name = "test_csv"
+            dirpath = "./tests/data/csv_table/" 
+        "#)).unwrap();
+
+        // generate mock schema for the table
+        let schema_one = DFSchema::new_with_metadata(
+            vec![
+                Field::new("id", DataType::Int64, true).into(),
+                Field::new("values", DataType::Int64, true).into(),
+            ],
+            (0..2).map(|i| (format!("k{i}"), format!("v{i}"))).collect()
+        ).unwrap();
+
+        // add the mock table to the catalog and update its schema
+        let _ = table.update_catalog(&catalog, &schema_one).unwrap();
+
+        let schema_two = DFSchema::new_with_metadata(
+            vec![
+                Field::new("id", DataType::Int64, true).into(),
+                Field::new("meta", DataType::Int64, true).into(),
+            ],
+            (0..2).map(|i| (format!("k{i}"), format!("v{i}"))).collect()
+        ).unwrap();
+
+        // update the schema
+        let _ = table.update_catalog(&catalog, &schema_two).unwrap();
+
+        let expected_schema = DFSchema::new_with_metadata(
+            vec![
+                Field::new("id", DataType::Int64, true).into(),
+                Field::new("values", DataType::Int64, true).into(),
+                Field::new("meta", DataType::Int64, true).into(),
+            ],
+            (0..2).map(|i| (format!("k{i}"), format!("v{i}"))).collect()
+        ).unwrap();
+
+        // get tables schema and check the merge took place
+        let (schema, destinations) = catalog.get("test_csv").unwrap().clone();
+        assert_eq!(schema, Some(expected_schema));
+        assert!(destinations.is_empty());
+
+    }
+
+    #[tokio::test]
+    async fn new_data_is_sent_to_destinations() {
+    
+        // load a mock files type of source table  
+        let mut table: SourceTable = toml::from_str(&String::from(r#"
+            type = "files"
+            table_name = "test_csv"
+            dirpath = "./tests/data/csv_table/" 
+        "#)).unwrap();
+
+        // generate a dataframe for the table
+        let (_read_success, df) = table.read_new_data().await.unwrap();
+
+        // mock a destination tables channel
+        let (tx, mut rx) = unbounded_channel();
+
+        // send the data to the interested destinations
+        table.send_new_data(vec![tx], df.clone()).unwrap();
+
+        let recv_df = rx.recv().await.unwrap();
+        assert_eq!(recv_df.collect().await.unwrap(), df.collect().await.unwrap());
+
+    }
+
+    #[tokio::test]
+    async fn start_function_begins_polling_correctly() {
+    
+        // create a mock data catalog for Anasto
+        let catalog: Catalog = DashMap::new().into();
+
+        // load a mock files type of source table  
+        let mut table: SourceTable = toml::from_str(&String::from(r#"
+            type = "files"
+            table_name = "test_csv"
+            dirpath = "./tests/data/csv_table/" 
+        "#)).unwrap();
+
+        // add the mock table to the catalog
+        let _handle = table.start(catalog.clone()).await;
+
+        // check that table is registered in the catalog
+        let (schema, destinations) = catalog.get("test_csv").unwrap().clone();
+        assert_eq!(schema, None);
+        assert!(destinations.is_empty());
+
+    }
+
+}
