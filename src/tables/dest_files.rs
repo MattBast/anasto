@@ -352,7 +352,7 @@ mod tests {
     #[tokio::test]
     async fn can_write_csv_table() {
     
-    	// create diectory for destinsation table that tears itself down at the end of the test
+    	// create diectory for destination table that tears itself down at the end of the test
         let _test_dir = TestDir::new("./tests/data/test_csv_dest/");
 
         // create the destination table

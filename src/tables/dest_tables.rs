@@ -50,7 +50,7 @@ impl DestTable {
         spawn(async move {
 
             // add the table to the catalog
-            match table.register(catalog.clone(), tx) {
+            match table.register(&catalog, tx) {
                 Ok(_) => (),
                 Err(_) => return,
             };
@@ -59,7 +59,7 @@ impl DestTable {
 
             // start listening for new data from the source table
             while let Some(df) = rx.recv().await {
-                // trigger the designated action
+
                 match table.write_new_data(df).await {
                     
                     Ok(_) => (),
@@ -100,7 +100,7 @@ impl DestTable {
     }
 
     /// Add the table to the internal data catalog
-    fn register(&self, catalog: Catalog, tx: UnboundedSender<DataFrame>,) -> Result<(), Error> {
+    fn register(&self, catalog: &Catalog, tx: UnboundedSender<DataFrame>,) -> Result<(), Error> {
         
         match catalog.entry(self.src_table_name().to_string()) {
             
@@ -112,7 +112,7 @@ impl DestTable {
             Entry::Vacant(_) => {
                 let error_message = format!("Source table {} could not be found in catalog.", self.src_table_name());
                 error!(target: self.dest_table_name(), "{}", &error_message);
-                Err(Error::new(ErrorKind::Other, error_message))
+                Err(Error::new(ErrorKind::NotFound, error_message))
             },
         
         }
@@ -134,5 +134,124 @@ impl DestTable {
             Self::OpenTable(table) => table.on_fail(),
 		}
 	}
+
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tables::test_utils::TestDir;
+    use dashmap::DashMap;
+    use tokio::sync::mpsc::unbounded_channel;
+    use datafusion::prelude::SessionContext;
+    use tokio::time::{ Duration, sleep };
+
+    #[tokio::test]
+    async fn register_adds_tables_trasmitter_to_catalog() {
+
+        // create diectory for the destination table that tears itself down at the end of the test
+        let _test_dir = TestDir::new("./tests/data/json_test_dest_table/");
+
+        // create a mock data catalog for Anasto
+        let catalog: Catalog = DashMap::new().into();
+
+        // add mock source table to the catalog
+        let entry = (None, Vec::new());
+        let _ = catalog.insert("csv_table".to_string(), entry);
+
+        // gennerate a destination table
+        let table: DestTable = toml::from_str(&String::from(r#"
+            type = "files"
+            source_table_name = "csv_table"
+            dest_table_name = "json_test_dest_table"
+            dirpath = "./tests/data/json_test_dest_table/" 
+            filetype = "json"
+        "#)).unwrap();
+
+        // generste a mock channel for the table
+        let (tx, _rx) = unbounded_channel();
+
+        // add the mock channel to the catalog
+        table.register(&catalog, tx).unwrap();
+
+        let (_schema, destinations) = catalog.get("csv_table").unwrap().clone();
+        assert_eq!(destinations.len(), 1);
+
+    }
+
+
+    #[tokio::test]
+    async fn register_throws_error_when_source_table_is_not_registered() {
+
+        // create diectory for the destination table that tears itself down at the end of the test
+        let _test_dir = TestDir::new("./tests/data/no_source_table/");
+
+        // create a mock data catalog for Anasto
+        let catalog: Catalog = DashMap::new().into();
+
+        // gennerate a destination table
+        let table: DestTable = toml::from_str(&String::from(r#"
+            type = "files"
+            source_table_name = "csv_table"
+            dest_table_name = "no_source_table"
+            dirpath = "./tests/data/no_source_table/" 
+            filetype = "json"
+        "#)).unwrap();
+
+        // generste a mock channel for the table
+        let (tx, _rx) = unbounded_channel();
+
+        // add the mock channel to the catalog
+        let register_result = table.register(&catalog, tx);
+
+        assert!(register_result.is_err());
+        assert_eq!(register_result.map_err(|e| e.kind()), Err(ErrorKind::NotFound));
+
+    }
+
+
+    #[tokio::test]
+    async fn started_table_can_receive_new_data() {
+
+        // create diectory for the destination table that tears itself down at the end of the test
+        let _test_dir = TestDir::new("./tests/data/started_table/");
+
+        // create a mock data catalog for Anasto
+        let catalog: Catalog = DashMap::new().into();
+
+        // add mock source table to the catalog
+        let entry = (None, Vec::new());
+        let _ = catalog.insert("csv_table".to_string(), entry);
+
+        // gennerate a destination table
+        let mut table: DestTable = toml::from_str(&String::from(r#"
+            type = "files"
+            source_table_name = "csv_table"
+            dest_table_name = "started_table"
+            dirpath = "./tests/data/started_table/" 
+            filetype = "json"
+        "#)).unwrap();
+
+        // start the table listening for new data
+        let _handle = table.start(catalog.clone()).await;
+
+        // setup mock source table data, get transmitter from catalog and send data to destination 
+        let ctx = SessionContext::new();
+        let src_df = ctx.read_csv("./tests/data/csv_table/", Default::default()).await.unwrap();
+        let _ = catalog.get_mut("csv_table").unwrap().clone().1[0].send(src_df.clone()).unwrap();
+
+        // give Anasto a moment to write the data
+        let wait = Duration::from_millis(50);
+        let _ = sleep(wait).await;
+
+        // check that data was written to the destination correctly
+        let dest_df = ctx.read_json("./tests/data/started_table/", Default::default()).await.unwrap();
+        let src_data = src_df.collect().await.unwrap();
+        let dest_data = dest_df.collect().await.unwrap();
+        assert!(dest_data.contains(&src_data[0]));
+        assert!(dest_data.contains(&src_data[1]));
+
+    }
 
 }

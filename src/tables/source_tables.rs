@@ -195,7 +195,7 @@ impl SourceTable {
         }
         else {
             
-            self.register(&catalog)?;
+            self.register(catalog)?;
             self.update_catalog(catalog, schema)
 
         }
