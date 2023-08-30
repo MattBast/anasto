@@ -1,11 +1,27 @@
-[workspace]
-members = [
-	"main",
-	"entrypoints",
-	"domains",
-	"bus",
-	"handlers",
-	"repos",
-	"config",
-	"sub"
-]
+[package]
+name = "anasto"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.32", features = ["full"] }
+pretty_env_logger = "0.4"
+log = "0.4"
+toml = "0.7.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+serde_derive = "1.0"
+datafusion = { version = "28.0.0", features = ["avro"] }
+dashmap = "5.5.0"
+random_name_generator = "0.3.5"
+convert_case = "0.6.0"
+time = "0.3.25"
+chrono = { version = "0.4.27", features = ["serde"] }
+deltalake = { version = "0.14.0", features = ["datafusion"] }
+uuid = { version = "1.2.2", features = ["v4"] }
+arrow-schema = "43.0.0"
+parquet = "43.0.0"
+apache-avro = { version = "0.15.0", features = ["snappy"] }
+
+[dev-dependencies]
+arrow-array = "43.0.0"
