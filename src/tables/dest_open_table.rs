@@ -263,7 +263,7 @@ impl DestOpenTable {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use chrono::naive::NaiveDate;
+	use chrono::{ Utc, TimeZone, naive::NaiveDate, naive::NaiveDateTime };
 	use crate::tables::test_utils::TestDir;
 	use datafusion::prelude::SessionContext;
 	use std::sync::Arc;
@@ -308,8 +308,8 @@ mod tests {
         assert!(matches!(table.format, OpenTableFormat::DeltaLake));
         assert!(matches!(table.on_fail, FailAction::Skip));
 
-        let naivedatetime_utc = NaiveDate::from_ymd_opt(2023, 8, 21).unwrap().and_hms_opt(0, 55, 0).unwrap();
-		let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, Utc);
+        let dt: NaiveDateTime = NaiveDate::from_ymd_opt(2023, 8, 21).unwrap().and_hms_opt(0, 55, 0).unwrap();
+		let datetime_utc = Utc.from_utc_datetime(&dt);
         assert_eq!(table.bookmark, datetime_utc);
 
     }

@@ -152,7 +152,7 @@ mod tests {
 	use std::matches;
 	use arrow_array::{ RecordBatch, StringArray, Int64Array, Int32Array };
 	use arrow_schema::{ Schema, Field, DataType };
-	use chrono::naive::NaiveDate;
+	use chrono::{ Utc, TimeZone, naive::NaiveDate, naive::NaiveDateTime };
 	
 
     #[test]
@@ -194,8 +194,8 @@ mod tests {
         assert_eq!(table.poll_interval, 5000);
         assert!(matches!(table.on_fail, FailAction::Skip));
 
-        let naivedatetime_utc = NaiveDate::from_ymd_opt(2023, 8, 21).unwrap().and_hms_opt(0, 55, 0).unwrap();
-		let datetime_utc = DateTime::<Utc>::from_utc(naivedatetime_utc, Utc);
+        let dt: NaiveDateTime = NaiveDate::from_ymd_opt(2023, 8, 21).unwrap().and_hms_opt(0, 55, 0).unwrap();
+        let datetime_utc = Utc.from_utc_datetime(&dt);
         assert_eq!(table.bookmark, datetime_utc);
 
     }
