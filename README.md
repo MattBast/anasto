@@ -1,5 +1,7 @@
 <img src="./logo.png">
 
+[![Rust](https://github.com/MattBast/anasto/actions/workflows/rust.yml/badge.svg)](https://github.com/MattBast/anasto/actions/workflows/rust.yml)
+
 Sync data from source system tables into destination lakes, warehouses and databases with nothing more than a config file.
 
 > Note: Anasto has been started as a personal project and is very much in the early stages. I hope you like it and I would love any feedback or ideas you have but please don't expect a feature rich application that is ready for production (yet :crossed_fingers:).
