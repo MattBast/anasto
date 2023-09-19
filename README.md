@@ -1,6 +1,6 @@
 <img src="./logo.png">
 
-[![Rust](https://github.com/MattBast/anasto/actions/workflows/rust.yml/badge.svg)](https://github.com/MattBast/anasto/actions/workflows/rust.yml)
+[![Tests](https://github.com/MattBast/anasto/actions/workflows/tests.yml/badge.svg)](https://github.com/MattBast/anasto/actions/workflows/tests.yml)
 
 Sync data from source system tables into destination lakes, warehouses and databases with nothing more than a config file.
 
