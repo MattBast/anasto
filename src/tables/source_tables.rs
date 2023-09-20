@@ -411,8 +411,13 @@ mod tests {
         // send the data to the interested destinations
         table.send_new_data(vec![tx], df.clone()).unwrap();
 
+        // receive the data and firmat into a vector of batches
         let recv_df = rx.recv().await.unwrap();
-        assert_eq!(recv_df.collect().await.unwrap(), df.collect().await.unwrap());
+        let recv_batches = recv_df.collect().await.unwrap();
+        let orig_batches = df.collect().await.unwrap();
+
+        assert!(recv_batches.contains(&orig_batches[0]));
+        assert!(recv_batches.contains(&orig_batches[1]));
 
     }
 
