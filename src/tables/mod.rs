@@ -15,6 +15,7 @@ pub mod utils;
 // Each of these module represents a different type of table
 pub mod source_files;
 pub mod source_open_table;
+pub mod source_api;
 pub mod dest_files;
 pub mod dest_open_table;
 

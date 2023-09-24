@@ -24,6 +24,7 @@ use tokio::sync::mpsc::UnboundedSender;
 // crates from the internal tables module
 use crate::tables::source_files::SourceFiles;
 use crate::tables::source_open_table::SourceOpenTable;
+use crate::tables::source_api::SourceApi;
 use crate::tables::FailAction;
 
 /// The variants in this enum represent all the different source tables that Anasto can process.
@@ -36,6 +37,9 @@ pub enum SourceTable {
 
    /// This source table reads files from Open Table format databases like Delta Lake
    OpenTable(SourceOpenTable),
+
+   /// This source table gets its data by calling an api
+   Api(SourceApi),
 
 }
 
@@ -132,6 +136,7 @@ impl SourceTable {
         match self {
             Self::Files(table) => table.table_name(),
             Self::OpenTable(table) => table.table_name(),
+            Self::Api(table) => table.table_name(),
         }
     }
 
@@ -140,6 +145,7 @@ impl SourceTable {
         match self {
             Self::Files(table) => table.poll_interval(),
             Self::OpenTable(table) => table.poll_interval(),
+            Self::Api(table) => table.poll_interval(),
         }
     }
 
@@ -166,6 +172,7 @@ impl SourceTable {
 		match self {
 			Self::Files(table) => table.read_new_data().await,
             Self::OpenTable(table) => table.read_new_data().await,
+            Self::Api(table) => table.read_new_data().await,
 		}
 	}
 
@@ -225,6 +232,7 @@ impl SourceTable {
 		match self {
 			Self::Files(table) => table.on_fail(),
             Self::OpenTable(table) => table.on_fail(),
+            Self::Api(table) => table.on_fail(),
 		}
 	}
 

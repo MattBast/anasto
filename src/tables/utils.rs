@@ -9,10 +9,11 @@ use serde::*;
 use chrono::{ DateTime, offset::Utc };
 use rnglib::{RNG, Language};
 use convert_case::{Case, Casing};
+use reqwest::Url;
 
 // Datafusion to Avro conversion crates
 use datafusion::common::DFSchema;
-use arrow_schema::DataType as ArrowDataType;
+use arrow_schema::{ Field, Fields, Schema, DataType as ArrowDataType };
 use apache_avro::types::Value as AvroValue;
 use apache_avro::schema::{
     Schema as AvroSchema,
@@ -27,7 +28,14 @@ use apache_avro::{ Writer as AvroWriter, Codec };
 use uuid::Uuid;
 use std::collections::BTreeMap;
 
+// JSON to Datafusion schema crates
+use serde_json::Value;
+use std::sync::Arc;
 
+
+// **************************************************************************************
+// Config check code
+// ************************************************************************************** 
 
 /// Return an error if the string provided is more than 500 characters long
 pub fn five_hundred_chars_check<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
@@ -80,6 +88,34 @@ pub fn start_of_time_timestamp() -> DateTime<Utc> {
 pub fn ten_secs_as_millis() -> u64 {
 	10_000
 }
+
+/// Parse a Url type as a str
+pub fn serialize_url<S>(url: &Url, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&url.as_str())
+}
+
+/// Make sure that string is a valid url
+pub fn deserialize_url<'de, D: Deserializer<'de>>(d: D) -> Result<Url, D::Error> {
+
+    let s = String::deserialize(d)?;
+    let url_result = Url::parse(&s);
+
+    match url_result {
+        Ok(url) => Ok(url),
+        Err(_e) => {
+            let error_message = format!("The string '{}' is not a url.", &s);
+            Err(D::Error::custom(error_message))
+        }
+    }
+
+}
+
+// **************************************************************************************
+// Datafusion to Avro conversion code
+// ************************************************************************************** 
 
 /// Read all json files under the provided dirpath and write their content to an Avro file
 pub fn create_avro_file(df_schema: DFSchema, table_name: &str, dirpath: &String) -> Result<(), std::io::Error> {
@@ -288,6 +324,78 @@ fn json_to_avro(json: &serde_json::Value) -> AvroValue {
                 .collect();
 
             AvroValue::Record(key_value_vec)
+
+        }
+    }
+
+}
+
+// **************************************************************************************
+// JSON to Datafusion schema code
+// ************************************************************************************** 
+
+/// Generate an arrow schema from a josn value
+pub fn schema_from_json(json: &serde_json::Value, table_name: &String) -> Schema {
+    
+    let fields = fields_from_json(json, table_name);
+    Schema::new(fields)
+
+}
+
+/// Infer arrow fields type from a json value
+fn fields_from_json(json: &serde_json::Value, field_name: &String) -> Fields {
+    
+    match json {
+        
+        Value::Object(obj) => {
+            
+            let fields_vec: Vec<Field> = obj
+                .into_iter()
+                .map(|(key, value)| field_from_json(value, key))
+                .collect();
+
+            Fields::from(fields_vec)
+
+        },
+        _ => Fields::from(vec![field_from_json(json, field_name)]),
+    }
+
+}
+
+/// Infer an arrow field and datatype from a json value
+fn field_from_json(json: &serde_json::Value, field_name: &String) -> Field {
+    
+    match json {
+        Value::Null => Field::new(field_name, ArrowDataType::Null, true),
+        Value::Bool(_) => Field::new(field_name, ArrowDataType::Boolean, true),
+        Value::Number(value) => {
+
+            if value.is_f64() {     
+                Field::new(field_name, ArrowDataType::Float64, true)
+            } 
+            else if value.is_i64() {
+                Field::new(field_name, ArrowDataType::Int64, true)
+            }
+            else {
+                Field::new(field_name, ArrowDataType::Float64, true)
+            }
+        },
+        Value::String(_) => Field::new(field_name, ArrowDataType::Utf8, true),
+        Value::Array(arr) => {
+            
+            let list_field = field_from_json(&arr[0], field_name);
+            Field::new(field_name, ArrowDataType::List(Arc::new(list_field)), true)
+
+        },
+        Value::Object(obj) => {
+            
+            let fields_vec: Vec<Field> = obj
+                .into_iter()
+                .map(|(key, value)| field_from_json(value, key))
+                .collect();
+
+            let object_fields = Fields::from(fields_vec);
+            Field::new(field_name, ArrowDataType::Struct(object_fields), true)
 
         }
     }
