@@ -94,7 +94,7 @@ pub fn serialize_url<S>(url: &Url, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    serializer.serialize_str(&url.as_str())
+    serializer.serialize_str(url.as_str())
 }
 
 /// Make sure that string is a valid url
@@ -120,7 +120,7 @@ where
 {
     match schema {
         Some(schema) => serializer.serialize_str(&schema.to_string()),
-        None => serializer.serialize_str(&String::new())
+        None => serializer.serialize_str("")
     }
 }
 

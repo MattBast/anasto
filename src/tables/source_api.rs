@@ -154,7 +154,7 @@ impl SourceApi {
 			None => {
 				let schema = schema_from_json(&json, &self.table_name);
 				self.schema = Some(schema.clone());
-				schema.clone()
+				schema
 			}
 
 		};
@@ -170,9 +170,7 @@ impl SourceApi {
 
 		// Parse the response to an Arrow RecordBatch
 		reader.serialize(&iter_json).unwrap();
-		let record_batch = reader.flush().unwrap().unwrap();
-
-		record_batch
+		reader.flush().unwrap().unwrap()
 
 	}
 
