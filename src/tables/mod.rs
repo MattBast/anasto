@@ -8,6 +8,7 @@
 //! - Sub-modules also define the configuration logic for each table
 
 use serde_derive::{ Serialize, Deserialize };
+use std::fmt;
 
 // Some handy functions that are used across different Tables
 pub mod utils;
@@ -71,4 +72,40 @@ pub enum OpenTableFormat {
    #[default]
    DeltaLake,
 
+}
+
+
+/// This enum defines HTTP methods
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
+#[serde(rename_all="snake_case")]
+pub enum HttpMethod {
+   
+   /// get method
+   #[default]
+   Get,
+
+   /// post method
+   Post,
+
+   /// put method
+   Put,
+
+   /// patch method
+   Patch,
+
+   /// delete method
+   Delete,
+
+}
+
+impl fmt::Display for HttpMethod{
+   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      match self {
+         HttpMethod::Get => write!(f, "GET"),
+         HttpMethod::Post => write!(f, "POST"),
+         HttpMethod::Put => write!(f, "PUT"),
+         HttpMethod::Patch => write!(f, "PATCH"),
+         HttpMethod::Delete => write!(f, "DELETE"),
+      }
+   }
 }

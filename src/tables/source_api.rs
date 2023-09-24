@@ -11,7 +11,7 @@ use log::info;
 use serde_derive::{ Serialize, Deserialize };
 use chrono::{ DateTime, offset::Utc };
 use std::time::Duration;
-use crate::tables::FailAction;
+use crate::tables::{ FailAction, HttpMethod };
 use crate::tables::utils::{
 	five_hundred_chars_check, 
 	random_table_name, 
@@ -19,13 +19,16 @@ use crate::tables::utils::{
 	start_of_time_timestamp,
 	deserialize_url,
 	serialize_url,
+	serialize_schema,
 	schema_from_json
 };
 use datafusion::prelude::{ SessionContext, DataFrame };
 use datafusion::error::Result;
 
 use reqwest::Url;
+use arrow_schema::Schema;
 use serde_json::Value;
+use arrow_array::RecordBatch;
 use arrow_json::ReaderBuilder;
 
 /// The SourceApi reads files from a local or remote filesystem
@@ -42,6 +45,10 @@ pub struct SourceApi {
 	#[serde(deserialize_with="deserialize_url", serialize_with="serialize_url")]
 	pub endpoint_url: Url,
 
+	/// The HTTP method to call this endpoint with
+	#[serde(default)]
+	pub method: HttpMethod,
+
     /// Tracks which files have been read using their created timestamp
     #[serde(default="start_of_time_timestamp")]
     pub bookmark: DateTime<Utc>,
@@ -53,6 +60,10 @@ pub struct SourceApi {
     /// Optional field. Decide what to do when new data fails to be written to a destination.
     #[serde(default)]
     pub on_fail: FailAction,
+
+    /// Stores the schema so it only needs to be generated once.
+    #[serde(default, skip_deserializing, serialize_with="serialize_schema")]
+    pub schema: Option<Schema>,
 
 }
 
@@ -80,35 +91,13 @@ impl SourceApi {
 
 		let ctx = SessionContext::new();
 
-		info!(target: &self.table_name, "Calling api endpoint {}.", self.endpoint_url);
+		info!(target: &self.table_name, "Calling api endpoint {} with method {}.", self.endpoint_url, self.method);
 
-		// *******************************************************************
-		// make sure to include all four methods (get, post, put, delete)
-		// and make sure to handle the http status code
-		// *******************************************************************
 		// make the request
-		let resp = match reqwest::get(self.endpoint_url.as_str()).await {
-			Ok(resp) => resp,
-			Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string()))
-		};
+		let resp = self.call_api().await?;
 
-		// parse the response to a json object
-		let body = match resp.json::<Value>().await {
-			Ok(resp) => resp,
-			Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string()))	
-		};
-
-		// discover the response schema and generate a record batch generator from it
-		let schema = schema_from_json(&body, &self.table_name);
-		let mut reader = ReaderBuilder::new(Arc::new(schema)).build_decoder().unwrap();
-
-		// parse the response to a arrow record batch
-		let iter_body = match body {
-			Value::Array(arr) => arr,
-			_ => [body].to_vec()
-		};
-		reader.serialize(&iter_body).unwrap();
-		let record_batch = reader.flush().unwrap().unwrap();
+		// parse the response into an Arrow RecordBatch
+		let record_batch = self.json_to_record_batch(resp);
 
 		// read the data into a dataframe (table)
         let df = ctx.read_batch(record_batch)?;
@@ -117,6 +106,73 @@ impl SourceApi {
         self.bookmark = Utc::now();
 
 		Ok((true, df))
+
+	}
+
+	/// Call the API endpoint with the specified method. Return the response body.
+	async fn call_api(&self) -> Result<Value, Error> {
+
+		// *******************************************************************
+		// make sure to include all four methods (get, post, put, delete)
+		// and make sure to handle the http status code
+		// *******************************************************************
+		let client = reqwest::Client::new();
+
+		let req = match self.method {
+			HttpMethod::Get => client.get(self.endpoint_url.as_str()).send().await,
+			HttpMethod::Post => client.post(self.endpoint_url.as_str()).send().await,
+			HttpMethod::Put => client.put(self.endpoint_url.as_str()).send().await,
+			HttpMethod::Patch => client.patch(self.endpoint_url.as_str()).send().await,
+			HttpMethod::Delete => client.delete(self.endpoint_url.as_str()).send().await,
+		};
+
+		let resp = match req {
+			Ok(resp) => resp,
+			Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string()))
+		};
+
+		// parse the response to a json object
+		let json_resp = match resp.json::<Value>().await {
+			Ok(resp) => resp,
+			Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string()))	
+		};
+
+		Ok(json_resp)
+
+	}
+
+	/// Parse the API json response body into an Arrow RecordBatch type
+	fn json_to_record_batch(&mut self, json: Value) -> RecordBatch {
+
+		// Get the schema for the json value
+		let schema = match &self.schema {
+			
+			// Use the previously inferred schema
+			Some(schema) => schema.clone(),
+			
+			// This must be the first API call so infer a schema from the json value
+			None => {
+				let schema = schema_from_json(&json, &self.table_name);
+				self.schema = Some(schema.clone());
+				schema.clone()
+			}
+
+		};
+
+		// Create a reader that will parse the json into a RecordBatch
+		let mut reader = ReaderBuilder::new(Arc::new(schema)).build_decoder().unwrap();
+
+		// Make sure the json value is iterable
+		let iter_json = match json {
+			Value::Array(arr) => arr,
+			_ => [json].to_vec()
+		};
+
+		// Parse the response to an Arrow RecordBatch
+		reader.serialize(&iter_json).unwrap();
+		let record_batch = reader.flush().unwrap().unwrap();
+
+		record_batch
 
 	}
 

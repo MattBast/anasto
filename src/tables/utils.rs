@@ -113,6 +113,17 @@ pub fn deserialize_url<'de, D: Deserializer<'de>>(d: D) -> Result<Url, D::Error>
 
 }
 
+/// Parse an Arrow Schema type as a String
+pub fn serialize_schema<S>(schema: &Option<Schema>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match schema {
+        Some(schema) => serializer.serialize_str(&schema.to_string()),
+        None => serializer.serialize_str(&String::new())
+    }
+}
+
 // **************************************************************************************
 // Datafusion to Avro conversion code
 // ************************************************************************************** 
