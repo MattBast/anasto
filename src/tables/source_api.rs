@@ -20,12 +20,14 @@ use crate::tables::utils::{
 	deserialize_url,
 	serialize_url,
 	serialize_schema,
-	schema_from_json
+	schema_from_json,
+	deserialize_header_map,
+	serialize_header_map
 };
 use datafusion::prelude::{ SessionContext, DataFrame };
 use datafusion::error::Result;
 
-use reqwest::Url;
+use reqwest::{ Url, header::HeaderMap };
 use arrow_schema::Schema;
 use serde_json::Value;
 use arrow_array::RecordBatch;
@@ -48,6 +50,27 @@ pub struct SourceApi {
 	/// The HTTP method to call this endpoint with
 	#[serde(default)]
 	pub method: HttpMethod,
+
+	/// Select the field in the response where the table data resides. Provide
+	/// as a vector of strings to select a nested field
+	#[serde(default)]
+	pub select_field: Option<Vec<String>>,
+
+	/// How long to wait for a response before cancelling the request
+	#[serde(default)]
+	pub timeout: Option<Duration>,
+
+	/// Adds one or more queries to the url
+	#[serde(default)]
+	pub query: Option<Vec<(String, String)>>,
+
+	/// Adds a basic (username-password) header to the request
+	#[serde(default)]
+	pub basic_auth: Option<(String, String)>,
+
+	/// Adds one or more headers to the request
+	#[serde(default, deserialize_with="deserialize_header_map", serialize_with="serialize_header_map")]
+	pub headers: HeaderMap,
 
     /// Tracks which files have been read using their created timestamp
     #[serde(default="start_of_time_timestamp")]
@@ -173,5 +196,37 @@ impl SourceApi {
 		reader.flush().unwrap().unwrap()
 
 	}
+
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use chrono::Utc;
+
+	#[test]
+    fn table_with_minimal_config() {
+    
+        let content = String::from(r#"
+            table_name = "trello_board"
+            endpoint_url = "https://trello.com/b/abc/board.json" 
+        "#);
+
+        let table: SourceApi = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.table_name, "trello_board");
+        assert_eq!(table.endpoint_url, Url::parse("https://trello.com/b/abc/board.json").unwrap());
+        assert!(matches!(table.method, HttpMethod::Get));
+        assert_eq!(table.select_field, None);
+        assert_eq!(table.timeout, None);
+        assert_eq!(table.query, None);
+        assert_eq!(table.basic_auth, None);
+        assert_eq!(table.headers, HeaderMap::new());
+        assert_eq!(table.bookmark, chrono::DateTime::<Utc>::MIN_UTC);
+        assert_eq!(table.poll_interval, 10_000);
+        assert!(matches!(table.on_fail, FailAction::Stop));
+        assert_eq!(table.schema, None);
+
+    }
 
 }

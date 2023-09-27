@@ -9,7 +9,12 @@ use serde::*;
 use chrono::{ DateTime, offset::Utc };
 use rnglib::{RNG, Language};
 use convert_case::{Case, Casing};
-use reqwest::Url;
+use reqwest::{ 
+    Url, 
+    header::HeaderMap 
+};
+use std::collections::HashMap;
+use http::Error as HttpError;
 
 // Datafusion to Avro conversion crates
 use datafusion::common::DFSchema;
@@ -122,6 +127,36 @@ where
         Some(schema) => serializer.serialize_str(&schema.to_string()),
         None => serializer.serialize_str("")
     }
+}
+
+/// Make sure that headers are valid
+pub fn deserialize_header_map<'de, D: Deserializer<'de>>(d: D) -> Result<HeaderMap, D::Error> {
+
+    let headers: Vec<(String, String)> = Vec::deserialize(d)?;
+
+    let mut map: HashMap<String, String> = HashMap::new();
+
+    headers.iter().try_for_each(|(key, value)| { 
+        let _ = map.insert(key.to_string(), value.to_string()); 
+        Ok(())
+    })?;
+
+    let header_map: Result<HeaderMap, HttpError> = (&map).try_into();
+
+    match header_map {
+        Ok(header_map) => Ok(header_map),
+        Err(e) => Err(D::Error::custom(e.to_string()))
+    }
+
+}
+
+/// Parse a HeaderMap as a vector of string tuples
+pub fn serialize_header_map<S>(header_map: &HeaderMap, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{    
+    let raw_headers: Vec<String> = header_map.iter().map(|(key, value)| format!("({}{})", key.as_str(), value.to_str().unwrap())).collect();
+    serializer.serialize_str(&raw_headers.join(","))
 }
 
 // **************************************************************************************

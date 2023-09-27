@@ -79,6 +79,7 @@ dependencies = [
  "dashmap",
  "datafusion",
  "deltalake",
+ "http",
  "log",
  "parquet",
  "pretty_env_logger",
