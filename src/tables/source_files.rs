@@ -248,7 +248,7 @@ mod tests {
 
     }
 
-     #[test]
+    #[test]
     fn typo_in_fieldname() {
     
         let content = String::from(r#"

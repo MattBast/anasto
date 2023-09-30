@@ -15,6 +15,7 @@ use reqwest::{
 };
 use std::collections::HashMap;
 use http::Error as HttpError;
+use std::time::Duration;
 
 // Datafusion to Avro conversion crates
 use datafusion::common::DFSchema;
@@ -157,6 +158,28 @@ where
 {    
     let raw_headers: Vec<String> = header_map.iter().map(|(key, value)| format!("({}{})", key.as_str(), value.to_str().unwrap())).collect();
     serializer.serialize_str(&raw_headers.join(","))
+}
+
+/// Parse number as a duration
+pub fn deserialize_duration<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
+
+    let secs: u64 = match u64::deserialize(d) {
+        Ok(secs) => secs,
+        Err(e) => return Err(D::Error::custom(e.to_string()))
+    };
+    Ok(Some(Duration::from_secs(secs)))
+
+}
+
+/// Parse a Duration into a u64 type
+pub fn serialize_duration<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{    
+    match duration {
+        Some(duration) =>  serializer.serialize_str(&duration.as_secs().to_string()),
+        None =>  serializer.serialize_str("0")
+    }
 }
 
 // **************************************************************************************

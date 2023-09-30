@@ -22,7 +22,9 @@ use crate::tables::utils::{
 	serialize_schema,
 	schema_from_json,
 	deserialize_header_map,
-	serialize_header_map
+	serialize_header_map,
+	deserialize_duration,
+	serialize_duration
 };
 use datafusion::prelude::{ SessionContext, DataFrame };
 use datafusion::error::Result;
@@ -56,8 +58,8 @@ pub struct SourceApi {
 	#[serde(default)]
 	pub select_field: Option<Vec<String>>,
 
-	/// How long to wait for a response before cancelling the request
-	#[serde(default)]
+	/// How long to wait for a response before cancelling the request (in seconds)
+	#[serde(default, deserialize_with="deserialize_duration", serialize_with="serialize_duration")]
 	pub timeout: Option<Duration>,
 
 	/// Adds one or more queries to the url
@@ -202,7 +204,8 @@ impl SourceApi {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use chrono::Utc;
+	use chrono::{ Utc, TimeZone, naive::NaiveDate, naive::NaiveDateTime };
+	use http::header::HOST;
 
 	#[test]
     fn table_with_minimal_config() {
@@ -226,6 +229,156 @@ mod tests {
         assert_eq!(table.poll_interval, 10_000);
         assert!(matches!(table.on_fail, FailAction::Stop));
         assert_eq!(table.schema, None);
+
+    }
+
+    #[test]
+    fn table_with_full_config() {
+    
+        let content = String::from(r#"
+            table_name = "trello_board"
+            endpoint_url = "https://trello.com/b/abc/board.json" 
+            method = "put"
+            select_field = ["cards"]
+            timeout = 10
+            query = [["query_key","query_value"]]
+            basic_auth = ["username","password"]
+            headers = [["host","world"]]
+            bookmark = "2023-08-21T00:55:00z"
+            poll_interval = 20000
+            on_fail = "skip"
+        "#);
+
+        let table: SourceApi = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.table_name, "trello_board");
+        assert_eq!(table.endpoint_url, Url::parse("https://trello.com/b/abc/board.json").unwrap());
+        assert!(matches!(table.method, HttpMethod::Put));
+        assert_eq!(table.select_field, Some(vec!["cards".to_string()]));
+        assert_eq!(table.timeout, Some(Duration::from_secs(10)));
+        assert_eq!(table.query, Some(vec![("query_key".to_string(), "query_value".to_string())]));
+        assert_eq!(table.basic_auth, Some(("username".to_string(), "password".to_string())));
+        assert_eq!(table.poll_interval, 20_000);
+        assert!(matches!(table.on_fail, FailAction::Skip));
+        assert_eq!(table.schema, None);
+
+        let dt: NaiveDateTime = NaiveDate::from_ymd_opt(2023, 8, 21).unwrap().and_hms_opt(0, 55, 0).unwrap();
+        let datetime_utc = Utc.from_utc_datetime(&dt);
+        assert_eq!(table.bookmark, datetime_utc);
+
+        let mut headers = HeaderMap::new();
+        let _ = headers.insert(HOST, "world".parse().unwrap());
+        assert_eq!(table.headers, headers);
+
+    }
+
+    #[test]
+    fn missing_mandatory_field() {
+    
+        let content = String::from(r#"
+            table_name = "csv_table"
+        "#);
+
+        let table: Result<SourceApi, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "missing field `endpoint_url`", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn url_is_not_a_url() {
+    
+        let content = String::from(r#"
+            endpoint_url = "hello" 
+        "#);
+
+        let table: Result<SourceApi, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "The string 'hello' is not a url.", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn table_name_contains_too_many_characters() {
+    
+        let content = String::from(r#"
+            table_name = "name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name"
+            endpoint_url = "https://trello.com/b/abc/board.json" 
+        "#);
+
+        let table: Result<SourceApi, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(
+        		e.message(), 
+        		"The string: name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name_name is longer than 500 chars.", 
+        		"Incorrect error message."
+        	),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
+
+    }
+
+    #[test]
+    fn table_name_function_returns_table_name() {
+    
+        let content = String::from(r#"
+            table_name = "trello_board"
+            endpoint_url = "https://trello.com/b/abc/board.json" 
+        "#);
+
+        let table: SourceApi = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.table_name(), "trello_board");
+
+    }
+
+    #[test]
+    fn on_fail_function_returns_fail_action() {
+    
+        let content = String::from(r#"
+            endpoint_url = "https://trello.com/b/abc/board.json" 
+        "#);
+
+        let table: SourceApi = toml::from_str(&content).unwrap();
+
+        assert!(matches!(table.on_fail(), FailAction::Stop));
+
+    }
+
+    #[test]
+    fn poll_interval_function_returns_correct_duration() {
+    
+        let content = String::from(r#"
+            endpoint_url = "https://trello.com/b/abc/board.json" 
+        "#);
+
+        let table: SourceApi = toml::from_str(&content).unwrap();
+
+        assert_eq!(table.poll_interval(), Duration::from_millis(10_000));
+
+    }
+
+    #[test]
+    fn http_method_not_a_real_method() {
+    
+        let content = String::from(r#"
+            endpoint_url = "https://trello.com/b/abc/board.json" 
+            method = "insert"
+        "#);
+
+        let table: Result<SourceApi, toml::de::Error> = toml::from_str(&content);
+
+        match table {
+        	Err(e) => assert_eq!(e.message(), "unknown variant `insert`, expected one of `get`, `post`, `put`, `patch`, `delete`", "Incorrect error message."),
+        	Ok(_) => assert!(false, "Table config parse should have returned an error."),
+        }
 
     }
 
