@@ -206,6 +206,10 @@ mod tests {
 	use super::*;
 	use chrono::{ Utc, TimeZone, naive::NaiveDate, naive::NaiveDateTime };
 	use http::header::HOST;
+	use std::sync::Arc;
+	use arrow_array::{ RecordBatch, StringArray, Int64Array };
+	use arrow_schema::{ Schema, Field, DataType };
+	use serde_json::json;
 
 	#[test]
     fn table_with_minimal_config() {
@@ -379,6 +383,50 @@ mod tests {
         	Err(e) => assert_eq!(e.message(), "unknown variant `insert`, expected one of `get`, `post`, `put`, `patch`, `delete`", "Incorrect error message."),
         	Ok(_) => assert!(false, "Table config parse should have returned an error."),
         }
+
+    }
+
+    #[tokio::test]
+    async fn can_read_api_response() {
+    
+    	// Start a mock server.
+		let server = httpmock::MockServer::start();
+
+		// Create a mock on the server.
+		let _mock = server.mock(|when, then| {
+		    let _ = when.path("/user");
+		    let _ = then.status(200)
+		        .header("content-type", "application/json")
+		        .json_body(json!({ "name": "Hans", "id": 1 }));
+		});
+
+    	// define table config using mock servers url
+    	let config = format!("endpoint_url = \"{}\"", server.url("/user"));
+        let content = String::from(config);
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&content).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        // create the expected contents of the dataframe (as record batches)
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, true),
+            Field::new("name", DataType::Utf8, true),
+        ]));
+
+        let expected_batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int64Array::from(vec![1])),
+                Arc::new(StringArray::from(vec!["Hans"])),
+            ],
+        ).unwrap();
+
+        assert!(read_success);
+        assert!(df_data.contains(&expected_batch));
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
 
     }
 
