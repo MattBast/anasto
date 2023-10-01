@@ -86,6 +86,11 @@ pub struct SourceApi {
     #[serde(default)]
     pub on_fail: FailAction,
 
+    /// Optional field. State if this source should call an API just once (true) or 
+    /// if it should poll the API (false). Defaults to false.
+    #[serde(default)]
+    pub one_request: bool,
+
     /// Stores the schema so it only needs to be generated once.
     #[serde(default, skip_deserializing, serialize_with="serialize_schema")]
     pub schema: Option<Schema>,
@@ -206,10 +211,7 @@ mod tests {
 	use super::*;
 	use chrono::{ Utc, TimeZone, naive::NaiveDate, naive::NaiveDateTime };
 	use http::header::HOST;
-	use std::sync::Arc;
-	use arrow_array::{ RecordBatch, StringArray, Int64Array };
-	use arrow_schema::{ Schema, Field, DataType };
-	use serde_json::json;
+	use crate::tables::test_utils::{ basic_mock_api, api_resp_batch };
 
 	#[test]
     fn table_with_minimal_config() {
@@ -232,6 +234,7 @@ mod tests {
         assert_eq!(table.bookmark, chrono::DateTime::<Utc>::MIN_UTC);
         assert_eq!(table.poll_interval, 10_000);
         assert!(matches!(table.on_fail, FailAction::Stop));
+        assert!(matches!(table.one_request, false));
         assert_eq!(table.schema, None);
 
     }
@@ -251,6 +254,7 @@ mod tests {
             bookmark = "2023-08-21T00:55:00z"
             poll_interval = 20000
             on_fail = "skip"
+            one_request = true
         "#);
 
         let table: SourceApi = toml::from_str(&content).unwrap();
@@ -264,6 +268,7 @@ mod tests {
         assert_eq!(table.basic_auth, Some(("username".to_string(), "password".to_string())));
         assert_eq!(table.poll_interval, 20_000);
         assert!(matches!(table.on_fail, FailAction::Skip));
+        assert!(matches!(table.one_request, true));
         assert_eq!(table.schema, None);
 
         let dt: NaiveDateTime = NaiveDate::from_ymd_opt(2023, 8, 21).unwrap().and_hms_opt(0, 55, 0).unwrap();
@@ -387,42 +392,127 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn can_read_api_response() {
+    async fn can_make_single_get_request() {
     
-    	// Start a mock server.
-		let server = httpmock::MockServer::start();
-
-		// Create a mock on the server.
-		let _mock = server.mock(|when, then| {
-		    let _ = when.path("/user");
-		    let _ = then.status(200)
-		        .header("content-type", "application/json")
-		        .json_body(json!({ "name": "Hans", "id": 1 }));
-		});
+    	let mock_api = basic_mock_api("GET");
 
     	// define table config using mock servers url
-    	let config = format!("endpoint_url = \"{}\"", server.url("/user"));
-        let content = String::from(config);
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		one_request = true
+    	"#, mock_api.url("/user"));
 
         // Create the table and read in new data from the mock api.
         // Parse the table as a vec of record batches.
-        let mut table: SourceApi = toml::from_str(&content).unwrap();
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
         let (read_success, df) = table.read_new_data().await.unwrap();
         let df_data = df.collect().await.unwrap();
 
-        // create the expected contents of the dataframe (as record batches)
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int64, true),
-            Field::new("name", DataType::Utf8, true),
-        ]));
+        let expected_batch = api_resp_batch();
 
-        let expected_batch = RecordBatch::try_new(
-            Arc::clone(&schema),
-            vec![
-                Arc::new(Int64Array::from(vec![1])),
-                Arc::new(StringArray::from(vec!["Hans"])),
-            ],
-        ).unwrap();
+        assert!(read_success);
+        assert!(df_data.contains(&expected_batch));
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+
+    }
+
+    #[tokio::test]
+    async fn can_make_single_post_request() {
+    
+    	let mock_api = basic_mock_api("POST");
+
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		one_request = true
+    		method = "post"
+    	"#, mock_api.url("/user"));
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        let expected_batch = api_resp_batch();
+
+        assert!(read_success);
+        assert!(df_data.contains(&expected_batch));
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+
+    }
+
+    #[tokio::test]
+    async fn can_make_single_put_request() {
+    
+    	let mock_api = basic_mock_api("PUT");
+
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		one_request = true
+    		method = "put"
+    	"#, mock_api.url("/user"));
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        let expected_batch = api_resp_batch();
+
+        assert!(read_success);
+        assert!(df_data.contains(&expected_batch));
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+
+    }
+
+    #[tokio::test]
+    async fn can_make_single_patch_request() {
+    
+    	let mock_api = basic_mock_api("PATCH");
+
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		one_request = true
+    		method = "patch"
+    	"#, mock_api.url("/user"));
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        let expected_batch = api_resp_batch();
+
+        assert!(read_success);
+        assert!(df_data.contains(&expected_batch));
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+
+    }
+
+    #[tokio::test]
+    async fn can_make_single_delete_request() {
+    
+    	let mock_api = basic_mock_api("DELETE");
+
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		one_request = true
+    		method = "delete"
+    	"#, mock_api.url("/user"));
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        let expected_batch = api_resp_batch();
 
         assert!(read_success);
         assert!(df_data.contains(&expected_batch));

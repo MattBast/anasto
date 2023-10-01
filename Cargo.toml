@@ -26,6 +26,4 @@ reqwest = { version = "0.11.20", features = ["json"] }
 arrow-json = "43.0.0"
 arrow-array = "43.0.0"
 http = "0.2.9"
-
-[dev-dependencies]
 httpmock = "0.6.8"
