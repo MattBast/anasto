@@ -5,8 +5,8 @@ use std::fs::{ create_dir_all, remove_dir_all };
 // API test crates
 use serde_json::json;
 use std::sync::Arc;
-use arrow_array::{ RecordBatch, StringArray, Int64Array };
-use arrow_schema::{ Schema, Field, DataType };
+use arrow_array::{ RecordBatch, StringArray, Int64Array, StructArray, ArrayRef };
+use arrow_schema::{ Field, Fields, DataType };
 
 /// A helper struct for creating and deleting directories needed by test functions
 #[derive(Debug)]
@@ -46,20 +46,44 @@ impl Drop for TestDir {
 }
 
 /// A function for creating a simple mock server
-pub fn basic_mock_api(method: &str) -> httpmock::MockServer {
+pub fn basic_mock_api(method: &str, query: bool, header: bool) -> httpmock::MockServer {
 
     // Start a mock server.
     let server = httpmock::MockServer::start();
 
     // Create a mock on the server.
     let _mock = server.mock(|when, then| {
-        let _ = when
-            .path("/user")
-            .method(method);
+        
+        if query {
+            let _ = when
+                .path("/user")
+                .method(method)
+                .query_param("query", "Metallica");
+        }
+        else if header {
+            let _ = when
+                .path("/user")
+                .method(method)
+                .header("Authorization", "token 1234567890");
+        }
+        else {
+            let _ = when
+                .path("/user")
+                .method(method);
+        }
+            
         let _ = then
             .status(200)
             .header("content-type", "application/json")
-            .json_body(json!({ "name": "Hans", "id": 1 }));
+            .json_body(json!({ 
+                "name": "Hans", 
+                "id": 1,
+                "address": {
+                    "number": 2,
+                    "line": "terrace road",
+                    "postcode": "S001AB"
+                }
+            }));
     });
 
     server
@@ -69,18 +93,57 @@ pub fn basic_mock_api(method: &str) -> httpmock::MockServer {
 /// A function for generating a test record batch to test an api response against
 pub fn api_resp_batch() -> RecordBatch {
 
-    // create the expected contents of the dataframe (as record batches)
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("id", DataType::Int64, true),
-        Field::new("name", DataType::Utf8, true),
-    ]));
+    StructArray::from(vec![
+        (
+            Arc::new(Field::new("address", DataType::Struct(Fields::from(vec![
+                Field::new("line", DataType::Utf8, true),
+                Field::new("number", DataType::Int64, true),
+                Field::new("postcode", DataType::Utf8, true),
+            ])), true)),
+            Arc::new(StructArray::from(vec![
+                (
+                    Arc::new(Field::new("line", DataType::Utf8, true)),
+                    Arc::new(StringArray::from(vec!["terrace road"])) as ArrayRef,
+                ),
+                (
+                    Arc::new(Field::new("number", DataType::Int64, true)),
+                    Arc::new(Int64Array::from(vec![2])) as ArrayRef,
+                ),
+                (
+                    Arc::new(Field::new("postcode", DataType::Utf8, true)),
+                    Arc::new(StringArray::from(vec!["S001AB"])) as ArrayRef,
+                ),
+            ])) as ArrayRef,
+        ),
+        (
+            Arc::new(Field::new("id", DataType::Int64, true)),
+            Arc::new(Int64Array::from(vec![1])) as ArrayRef,
+        ),
+        (
+            Arc::new(Field::new("name", DataType::Utf8, true)),
+            Arc::new(StringArray::from(vec!["Hans"])) as ArrayRef,
+        ),
+    ]).into()
 
-    RecordBatch::try_new(
-        Arc::clone(&schema),
-        vec![
-            Arc::new(Int64Array::from(vec![1])),
-            Arc::new(StringArray::from(vec!["Hans"])),
-        ],
-    ).unwrap()
+}
+
+/// Same as the `api_resp_batch` function but returns the fields in the nested 
+/// `address` field
+pub fn nested_api_resp_batch() -> RecordBatch {
+
+    StructArray::from(vec![
+        (
+            Arc::new(Field::new("line", DataType::Utf8, true)),
+            Arc::new(StringArray::from(vec!["terrace road"])) as ArrayRef,
+        ),
+        (
+            Arc::new(Field::new("number", DataType::Int64, true)),
+            Arc::new(Int64Array::from(vec![2])) as ArrayRef,
+        ),
+        (
+            Arc::new(Field::new("postcode", DataType::Utf8, true)),
+            Arc::new(StringArray::from(vec!["S001AB"])) as ArrayRef,
+        ),
+    ]).into()
 
 }
