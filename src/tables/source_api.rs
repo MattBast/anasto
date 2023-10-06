@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 use std::io::{ Error, ErrorKind };
-use log::info;
+use log::{ info, warn };
 use serde_derive::{ Serialize, Deserialize };
 use chrono::{ DateTime, offset::Utc };
 use std::time::Duration;
@@ -144,7 +144,6 @@ impl SourceApi {
 
 		// *******************************************************************
 		// make sure to include all four methods (get, post, put, delete)
-		// and make sure to handle the http status code
 		// *******************************************************************
 		let client = reqwest::Client::new();
 
@@ -156,6 +155,9 @@ impl SourceApi {
 			HttpMethod::Delete => client.delete(self.endpoint_url.as_str()).send().await,
 		};
 
+		// *******************************************************************
+		// and make sure to handle the http status code
+		// *******************************************************************
 		let resp = match req {
 			Ok(resp) => resp,
 			Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string()))
@@ -172,8 +174,17 @@ impl SourceApi {
 	}
 
 	/// Parse the API json response body into an Arrow RecordBatch type
-	fn json_to_record_batch(&mut self, json: Value) -> RecordBatch {
+	fn json_to_record_batch(&mut self, mut json: Value) -> RecordBatch {
 
+		// Select nested data from the response.
+		json = match self.filter_result(json.clone(), 0) {
+			Ok(filtered_json) => filtered_json,
+			Err(e) => {
+				warn!("Got error '{:?}' while selecting field from result. Ignoring field select.", e);
+				json
+			}
+		};
+		
 		// Get the schema for the json value
 		let schema = match &self.schema {
 			
@@ -201,6 +212,41 @@ impl SourceApi {
 		// Parse the response to an Arrow RecordBatch
 		reader.serialize(&iter_json).unwrap();
 		reader.flush().unwrap().unwrap()
+
+	}
+
+	/// If the option is active, filter the response to include only the selected field
+	fn filter_result(&self, json: Value, mut index: usize) -> Result<Value, Error> {
+
+		match &self.select_field {
+			
+			Some(fields) => match json {
+				
+				Value::Object(json_obj) => {
+					
+					let filtered_obj = match json_obj.get(&fields[index]) {
+						Some(filtered_obj) => filtered_obj,
+						None => return Err(Error::new(ErrorKind::Other, format!("The value {:?} does not contain the key {}.", json_obj, &fields[index])))
+					};
+
+					index = index + 1;
+
+					if fields.len() == index {
+						Ok(filtered_obj.clone())
+					}
+					else {
+						self.filter_result(filtered_obj.clone(), index)
+					}
+
+				},
+
+				_ => Err(Error::new(ErrorKind::Other, format!("The value {} is not an object.", json)))
+
+			},
+
+			None => Ok(json)
+
+		}
 
 	}
 
