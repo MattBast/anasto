@@ -74,6 +74,10 @@ pub struct SourceApi {
 	#[serde(default, deserialize_with="deserialize_header_map", serialize_with="serialize_header_map")]
 	pub headers: HeaderMap,
 
+	/// Adds a json body to the request
+	#[serde(default)]
+	pub body: Option<Value>,
+
     /// Tracks which files have been read using their created timestamp
     #[serde(default="start_of_time_timestamp")]
     pub bookmark: DateTime<Utc>,
@@ -146,6 +150,7 @@ impl SourceApi {
 		req = self.add_query(req);
 		req = self.add_headers(req);
 		req = self.add_basic_auth(req);
+		req = self.add_body(req);
 
 		// *******************************************************************
 		// and make sure to handle the http status code
@@ -207,6 +212,16 @@ impl SourceApi {
 
 		match &self.basic_auth {
 			Some(auth) => req.basic_auth(&auth.0, Some(&auth.1)),
+			None => req
+		}
+
+	}
+
+	/// If the table is configured to use a body, add it to the request
+	fn add_body(&self, req: RequestBuilder) -> RequestBuilder {
+
+		match &self.body {
+			Some(body) => req.json(body),
 			None => req
 		}
 
@@ -479,7 +494,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_get_request() {
     
-    	let mock_api = basic_mock_api("GET", false, false, false);
+    	let mock_api = basic_mock_api("GET", false, false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -504,7 +519,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_post_request() {
     
-    	let mock_api = basic_mock_api("POST", false, false, false);
+    	let mock_api = basic_mock_api("POST", false, false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -530,7 +545,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_put_request() {
     
-    	let mock_api = basic_mock_api("PUT", false, false, false);
+    	let mock_api = basic_mock_api("PUT", false, false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -556,7 +571,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_patch_request() {
     
-    	let mock_api = basic_mock_api("PATCH", false, false, false);
+    	let mock_api = basic_mock_api("PATCH", false, false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -582,7 +597,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_delete_request() {
     
-    	let mock_api = basic_mock_api("DELETE", false, false, false);
+    	let mock_api = basic_mock_api("DELETE", false, false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -608,7 +623,7 @@ mod tests {
     #[tokio::test]
     async fn can_select_fields_from_resp() {
     
-    	let mock_api = basic_mock_api("GET", false, false, false);
+    	let mock_api = basic_mock_api("GET", false, false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -634,7 +649,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_request_including_a_query() {
     
-    	let mock_api = basic_mock_api("GET", true, false, false);
+    	let mock_api = basic_mock_api("GET", true, false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -660,7 +675,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_request_including_a_header() {
     
-    	let mock_api = basic_mock_api("GET", false, true, false);
+    	let mock_api = basic_mock_api("GET", false, true, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -686,13 +701,40 @@ mod tests {
     #[tokio::test]
     async fn can_make_request_including_basic_auth() {
     
-    	let mock_api = basic_mock_api("GET", false, false, true);
+    	let mock_api = basic_mock_api("GET", false, false, true, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
     		endpoint_url = "{}"
     		one_request = true
     		basic_auth = ["demo", "p@55w0rd"]
+    	"#, mock_api.url("/user"));
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        let expected_batch = api_resp_batch();
+
+        assert!(read_success);
+        assert!(df_data.contains(&expected_batch));
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+
+    }
+
+    #[tokio::test]
+    async fn can_make_request_including_body() {
+    
+    	let mock_api = basic_mock_api("POST", false, false, false, true);
+
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		method = "post"
+    		one_request = true
+    		body = {{ "name" = "Hans" }}
     	"#, mock_api.url("/user"));
 
         // Create the table and read in new data from the mock api.
