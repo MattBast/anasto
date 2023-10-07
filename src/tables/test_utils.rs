@@ -46,7 +46,7 @@ impl Drop for TestDir {
 }
 
 /// A function for creating a simple mock server
-pub fn basic_mock_api(method: &str, query: bool, header: bool) -> httpmock::MockServer {
+pub fn basic_mock_api(method: &str, query: bool, header: bool, auth: bool) -> httpmock::MockServer {
 
     // Start a mock server.
     let server = httpmock::MockServer::start();
@@ -64,7 +64,13 @@ pub fn basic_mock_api(method: &str, query: bool, header: bool) -> httpmock::Mock
             let _ = when
                 .path("/user")
                 .method(method)
-                .header("Authorization", "token 1234567890");
+                .header("key", "value");
+        }
+        else if auth {
+            let _ = when
+                .path("/user")
+                .method(method)
+                .header("Authorization", "Basic ZGVtbzpwQDU1dzByZA==");
         }
         else {
             let _ = when

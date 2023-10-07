@@ -29,7 +29,7 @@ use crate::tables::utils::{
 use datafusion::prelude::{ SessionContext, DataFrame };
 use datafusion::error::Result;
 
-use reqwest::{ Url, header::HeaderMap };
+use reqwest::{ Url, header::HeaderMap, RequestBuilder };
 use arrow_schema::Schema;
 use serde_json::Value;
 use arrow_array::RecordBatch;
@@ -142,23 +142,15 @@ impl SourceApi {
 	/// Call the API endpoint with the specified method. Return the response body.
 	async fn call_api(&self) -> Result<Value, Error> {
 
-		// *******************************************************************
-		// make sure to include all four methods (get, post, put, delete)
-		// *******************************************************************
-		let client = reqwest::Client::new();
-
-		let req = match self.method {
-			HttpMethod::Get => client.get(self.endpoint_url.as_str()).send().await,
-			HttpMethod::Post => client.post(self.endpoint_url.as_str()).send().await,
-			HttpMethod::Put => client.put(self.endpoint_url.as_str()).send().await,
-			HttpMethod::Patch => client.patch(self.endpoint_url.as_str()).send().await,
-			HttpMethod::Delete => client.delete(self.endpoint_url.as_str()).send().await,
-		};
+		let mut req = self.pick_method();
+		req = self.add_query(req);
+		req = self.add_headers(req);
+		req = self.add_basic_auth(req);
 
 		// *******************************************************************
 		// and make sure to handle the http status code
 		// *******************************************************************
-		let resp = match req {
+		let resp = match req.send().await {
 			Ok(resp) => resp,
 			Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string()))
 		};
@@ -170,6 +162,53 @@ impl SourceApi {
 		};
 
 		Ok(json_resp)
+
+	}
+
+	/// Start the request by picking the HTTP method
+	fn pick_method(&self) -> RequestBuilder {
+
+		let client = reqwest::Client::new();
+
+		match self.method {
+			HttpMethod::Get => client.get(self.endpoint_url.as_str()),
+			HttpMethod::Post => client.post(self.endpoint_url.as_str()),
+			HttpMethod::Put => client.put(self.endpoint_url.as_str()),
+			HttpMethod::Patch => client.patch(self.endpoint_url.as_str()),
+			HttpMethod::Delete => client.delete(self.endpoint_url.as_str()),
+		}
+
+	}
+
+	/// If the table is configured to accept a query, add the query params to the url
+	fn add_query(&self, req: RequestBuilder) -> RequestBuilder {
+
+		match &self.query {
+			Some(query_params) => req.query(&query_params),
+			None => req
+		}
+
+	}
+
+	/// If the table is configured to use headers, add the headers to the request
+	fn add_headers(&self, req: RequestBuilder) -> RequestBuilder {
+
+		if !self.headers.is_empty() {
+			req.headers(self.headers.clone())
+		}
+		else {
+			req
+		}
+
+	}
+
+	/// If the table is configured to use basic authorisation, add it to the header
+	fn add_basic_auth(&self, req: RequestBuilder) -> RequestBuilder {
+
+		match &self.basic_auth {
+			Some(auth) => req.basic_auth(&auth.0, Some(&auth.1)),
+			None => req
+		}
 
 	}
 
@@ -229,7 +268,7 @@ impl SourceApi {
 						None => return Err(Error::new(ErrorKind::Other, format!("The value {:?} does not contain the key {}.", json_obj, &fields[index])))
 					};
 
-					index = index + 1;
+					index += 1;
 
 					if fields.len() == index {
 						Ok(filtered_obj.clone())
@@ -440,7 +479,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_get_request() {
     
-    	let mock_api = basic_mock_api("GET", false, false);
+    	let mock_api = basic_mock_api("GET", false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -465,7 +504,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_post_request() {
     
-    	let mock_api = basic_mock_api("POST", false, false);
+    	let mock_api = basic_mock_api("POST", false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -491,7 +530,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_put_request() {
     
-    	let mock_api = basic_mock_api("PUT", false, false);
+    	let mock_api = basic_mock_api("PUT", false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -517,7 +556,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_patch_request() {
     
-    	let mock_api = basic_mock_api("PATCH", false, false);
+    	let mock_api = basic_mock_api("PATCH", false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -543,7 +582,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_delete_request() {
     
-    	let mock_api = basic_mock_api("DELETE", false, false);
+    	let mock_api = basic_mock_api("DELETE", false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -569,7 +608,7 @@ mod tests {
     #[tokio::test]
     async fn can_select_fields_from_resp() {
     
-    	let mock_api = basic_mock_api("GET", false, false);
+    	let mock_api = basic_mock_api("GET", false, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -595,7 +634,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_request_including_a_query() {
     
-    	let mock_api = basic_mock_api("GET", true, false);
+    	let mock_api = basic_mock_api("GET", true, false, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -610,7 +649,7 @@ mod tests {
         let (read_success, df) = table.read_new_data().await.unwrap();
         let df_data = df.collect().await.unwrap();
 
-        let expected_batch = nested_api_resp_batch();
+        let expected_batch = api_resp_batch();
 
         assert!(read_success);
         assert!(df_data.contains(&expected_batch));
@@ -621,13 +660,13 @@ mod tests {
     #[tokio::test]
     async fn can_make_request_including_a_header() {
     
-    	let mock_api = basic_mock_api("GET", false, true);
+    	let mock_api = basic_mock_api("GET", false, true, false);
 
     	// define table config using mock servers url
     	let config = format!(r#"
     		endpoint_url = "{}"
     		one_request = true
-    		headers = [["Authorization", "token 1234567890"]]
+    		headers = [["key", "value"]]
     	"#, mock_api.url("/user"));
 
         // Create the table and read in new data from the mock api.
@@ -636,7 +675,7 @@ mod tests {
         let (read_success, df) = table.read_new_data().await.unwrap();
         let df_data = df.collect().await.unwrap();
 
-        let expected_batch = nested_api_resp_batch();
+        let expected_batch = api_resp_batch();
 
         assert!(read_success);
         assert!(df_data.contains(&expected_batch));
@@ -647,13 +686,13 @@ mod tests {
     #[tokio::test]
     async fn can_make_request_including_basic_auth() {
     
-    	let mock_api = basic_mock_api("GET", false, true);
+    	let mock_api = basic_mock_api("GET", false, false, true);
 
     	// define table config using mock servers url
     	let config = format!(r#"
     		endpoint_url = "{}"
     		one_request = true
-    		basic_auth = ["Authorization", "token 1234567890"]
+    		basic_auth = ["demo", "p@55w0rd"]
     	"#, mock_api.url("/user"));
 
         // Create the table and read in new data from the mock api.
@@ -662,7 +701,7 @@ mod tests {
         let (read_success, df) = table.read_new_data().await.unwrap();
         let df_data = df.collect().await.unwrap();
 
-        let expected_batch = nested_api_resp_batch();
+        let expected_batch = api_resp_batch();
 
         assert!(read_success);
         assert!(df_data.contains(&expected_batch));
