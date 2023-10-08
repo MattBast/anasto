@@ -29,7 +29,7 @@ use crate::tables::utils::{
 use datafusion::prelude::{ SessionContext, DataFrame };
 use datafusion::error::Result;
 
-use reqwest::{ Url, header::HeaderMap, RequestBuilder };
+use reqwest::{ Url, header::HeaderMap, RequestBuilder, Response };
 use arrow_schema::Schema;
 use serde_json::Value;
 use arrow_array::RecordBatch;
@@ -125,15 +125,12 @@ impl SourceApi {
 
 		let ctx = SessionContext::new();
 
-		info!(target: &self.table_name, "Calling api endpoint {} with method {}.", self.endpoint_url, self.method);
-
 		// make the request
 		let resp = self.call_api().await?;
 
 		// parse the response into an Arrow RecordBatch
+		// and then into a dataframe
 		let record_batch = self.json_to_record_batch(resp);
-
-		// read the data into a dataframe (table)
         let df = ctx.read_batch(record_batch)?;
 
         // update the bookmark so future calls get new data
@@ -146,6 +143,7 @@ impl SourceApi {
 	/// Call the API endpoint with the specified method. Return the response body.
 	async fn call_api(&self) -> Result<Value, Error> {
 
+		// define the request
 		let mut req = self.pick_method();
 		req = self.add_query(req);
 		req = self.add_headers(req);
@@ -153,19 +151,17 @@ impl SourceApi {
 		req = self.add_body(req);
 		req = self.add_timeout(req);
 
-		// *******************************************************************
-		// and make sure to handle the http status code
-		// *******************************************************************
-		let resp = match req.send().await {
-			Ok(resp) => resp,
-			Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string()))
-		};
+		info!(target: &self.table_name, r#"
+			Calling api with request: 
+			{:?}
+		"#, req);
 
-		// parse the response to a json object
-		let json_resp = match resp.json::<Value>().await {
-			Ok(resp) => resp,
-			Err(e) => return Err(Error::new(ErrorKind::Other, e.to_string()))	
-		};
+		// send the request and wait for a response
+		let resp = req.send().await;
+
+		// handle the response
+		let checked_resp = self.check_response(resp)?;
+		let json_resp = self.parse_response(checked_resp).await?;
 
 		Ok(json_resp)
 
@@ -238,6 +234,39 @@ impl SourceApi {
 
 	}
 
+	// Check that the request was successful. Return an error if not.
+	fn check_response(&self, resp_result: Result<Response, reqwest::Error>) -> Result<Response, Error> {
+
+		match resp_result {
+			
+			Ok(resp) => {
+				
+				// Is the http status code in the range of 200-299
+				if resp.status().is_success() {
+					Ok(resp)
+				}
+				else {
+					Err(Error::new(ErrorKind::Other, "The response http status code was not in the range of 200-299."))
+				}
+
+			},
+
+			Err(e) => Err(Error::new(ErrorKind::Other, e.to_string()))
+
+		}
+
+	}
+
+	// Parse the response type into a JSON object
+	async fn parse_response(&self, resp: Response) -> Result<Value, Error> {
+
+		match resp.json::<Value>().await {
+			Ok(resp) => Ok(resp),
+			Err(e) => Err(Error::new(ErrorKind::Other, e.to_string()))	
+		}
+
+	}
+
 	/// Parse the API json response body into an Arrow RecordBatch type
 	fn json_to_record_batch(&mut self, mut json: Value) -> RecordBatch {
 
@@ -245,7 +274,7 @@ impl SourceApi {
 		json = match self.filter_result(json.clone(), 0) {
 			Ok(filtered_json) => filtered_json,
 			Err(e) => {
-				warn!("Got error '{:?}' while selecting field from result. Ignoring field select.", e);
+				warn!(target: &self.table_name, "Got error '{:?}' while selecting field from result. Ignoring field select.", e);
 				json
 			}
 		};
@@ -322,7 +351,7 @@ mod tests {
 	use super::*;
 	use chrono::{ Utc, TimeZone, naive::NaiveDate, naive::NaiveDateTime };
 	use http::header::HOST;
-	use crate::tables::test_utils::{ basic_mock_api, api_resp_batch, nested_api_resp_batch };
+	use crate::tables::test_utils::{ basic_mock_api, api_resp_batch, nested_api_resp_batch, bad_mock_api };
 
 	#[test]
     fn table_with_minimal_config() {
@@ -759,6 +788,44 @@ mod tests {
         assert!(read_success);
         assert!(df_data.contains(&expected_batch));
         assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+
+    }
+
+    #[tokio::test]
+    async fn throws_error_when_400_code_is_received() {
+    
+    	let mock_api = bad_mock_api(404);
+
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		one_request = true
+    	"#, mock_api.url("/user"));
+
+        // Create the table and make a call to the mock api
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let read_result = table.read_new_data().await;
+
+        assert!(read_result.is_err());
+
+    }
+
+    #[tokio::test]
+    async fn throws_error_when_500_code_is_received() {
+    
+    	let mock_api = bad_mock_api(500);
+
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		one_request = true
+    	"#, mock_api.url("/user"));
+
+        // Create the table and make a call to the mock api
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let read_result = table.read_new_data().await;
+
+        assert!(read_result.is_err());
 
     }
 

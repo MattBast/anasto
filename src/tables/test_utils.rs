@@ -103,6 +103,27 @@ pub fn basic_mock_api(method: &str, query: bool, header: bool, auth: bool, body:
 
 }
 
+/// Create a mock server that returns the specified staus codes
+pub fn bad_mock_api(status: u16) -> httpmock::MockServer {
+
+    // Start a mock server.
+    let server = httpmock::MockServer::start();
+
+    // Create a mock on the server.
+    let _mock = server.mock(|when, then| {
+            
+        let _ = when
+            .path("/user")
+            .method("GET");
+            
+        let _ = then
+            .status(status);
+    });
+
+    server
+
+}
+
 /// A function for generating a test record batch to test an api response against
 pub fn api_resp_batch() -> RecordBatch {
 
