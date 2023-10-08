@@ -151,6 +151,7 @@ impl SourceApi {
 		req = self.add_headers(req);
 		req = self.add_basic_auth(req);
 		req = self.add_body(req);
+		req = self.add_timeout(req);
 
 		// *******************************************************************
 		// and make sure to handle the http status code
@@ -222,6 +223,16 @@ impl SourceApi {
 
 		match &self.body {
 			Some(body) => req.json(body),
+			None => req
+		}
+
+	}
+
+	/// Adjust the request timeout to be different from the default
+	fn add_timeout(&self, req: RequestBuilder) -> RequestBuilder {
+
+		match &self.timeout {
+			Some(duration) => req.timeout(*duration),
 			None => req
 		}
 
