@@ -55,6 +55,12 @@ pub struct SourceOpenTable {
     #[serde(default)]
     pub on_fail: FailAction,
 
+    /// Optional field. State if this source should read all the table contents just
+    /// once (true) or if it should continuously check the table for new data 
+    /// (false). Defaults to false.
+    #[serde(default)]
+    pub one_request: bool,
+
     /// Private field. Tracks whether this table has done it's first read
     #[serde(default)]
     first_read: bool
@@ -321,7 +327,7 @@ mod tests {
         let table: Result<SourceOpenTable, toml::de::Error> = toml::from_str(&content);
 
         match table {
-        	Err(e) => assert_eq!(e.message(), "unknown field `filetype`, expected one of `table_name`, `dirpath`, `format`, `bookmark`, `poll_interval`, `on_fail`, `first_read`", "Incorrect error message."),
+        	Err(e) => assert_eq!(e.message(), "unknown field `filetype`, expected one of `table_name`, `dirpath`, `format`, `bookmark`, `poll_interval`, `on_fail`, `one_request`, `first_read`", "Incorrect error message."),
         	Ok(_) => assert!(false, "Table config parse should have returned an error."),
         }
 

@@ -50,6 +50,11 @@ pub struct SourceFiles {
     #[serde(default="ten_secs_as_millis")]
     pub poll_interval: u64,
 
+    /// Optional field. State if this source should read all the files just once (true) or 
+    /// if it should continuously check for new files (false). Defaults to false.
+    #[serde(default)]
+    pub one_request: bool,
+
     /// Optional field. Decide what to do when new data fails to be written to a destination.
     #[serde(default)]
     pub on_fail: FailAction,
@@ -259,7 +264,7 @@ mod tests {
         let table: Result<SourceFiles, toml::de::Error> = toml::from_str(&content);
 
         match table {
-        	Err(e) => assert_eq!(e.message(), "unknown field `filepath`, expected one of `table_name`, `dirpath`, `filetype`, `bookmark`, `poll_interval`, `on_fail`", "Incorrect error message."),
+        	Err(e) => assert_eq!(e.message(), "unknown field `filepath`, expected one of `table_name`, `dirpath`, `filetype`, `bookmark`, `poll_interval`, `one_request`, `on_fail`", "Incorrect error message."),
         	Ok(_) => assert!(false, "Table config parse should have returned an error."),
         }
 

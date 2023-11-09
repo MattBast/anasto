@@ -58,6 +58,11 @@ impl SourceTable {
             panic!("Failed to start a source table.");
         };
 
+        match table.one_request() {
+            true => info!(target: table.table_name(), "Single request mode on. Will read table only once."),
+            false => info!(target: table.table_name(), "Single request mode off. Will continuously poll table for changes."), 
+        }
+
         spawn(async move {
             
             // Start the ticker to manage how often the poll is triggered
@@ -127,6 +132,11 @@ impl SourceTable {
                 }
 
             };
+
+            if self.one_request() {
+                info!(target: self.table_name(), "Request made. Shutting down table.");
+                break
+            }
         
         }
     }
@@ -235,6 +245,15 @@ impl SourceTable {
             Self::Api(table) => table.on_fail(),
 		}
 	}
+
+    /// State whether the source table should be read once (true) or polled (false)
+    fn one_request(&self) -> bool {
+        match self {
+            Self::Files(table) => table.one_request,
+            Self::OpenTable(table) => table.one_request,
+            Self::Api(table) => table.one_request,
+        }
+    }
 
 }
 
