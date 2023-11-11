@@ -64,7 +64,7 @@ pub struct SourceApi {
 
 	/// Adds one or more queries to the url
 	#[serde(default)]
-	pub query: Option<Vec<(String, String)>>,
+	pub query: Vec<(String, String)>,
 
 	/// Adds a basic (username-password) header to the request
 	#[serde(default)]
@@ -98,6 +98,66 @@ pub struct SourceApi {
     /// Stores the schema so it only needs to be generated once.
     #[serde(default, skip_deserializing, serialize_with="serialize_schema")]
     pub schema: Option<Schema>,
+
+    /// Optional field. States what pagination approach will be taken. 
+    /// Defaults to None meaning no pagination will be performed.
+    #[serde(default)]
+    pub pagination: PaginationOptions,
+
+    /// Optional field. States the name of the page number parameter that will
+    /// increment during pagination. Defaults to "page_size".
+    #[serde(default="default_page_number_key")]
+    pub pagination_page_number_key: String,
+
+    /// Optional field. Keeps track of what page the pagination needs to request. 
+    /// Defaults to 0.
+    #[serde(default)]
+    pub pagination_page_number: usize,
+
+    /// Optional field. States the name of the page size parameter that will
+    /// increment during pagination. Defaults to "page".
+    #[serde(default="default_page_size_key")]
+    pub pagination_page_size_key: String,
+
+    /// Optional field. States how many records will be returned per page during. 
+    /// pagination. Defaults to 5.
+    #[serde(default="default_page_size")]
+    pub pagination_page_size: usize,
+
+}
+
+/// Returns the string "page"
+pub fn default_page_number_key() -> String {
+	String::from("page")
+}
+
+/// Returns the string "page_size"
+pub fn default_page_size_key() -> String {
+	String::from("page_size")
+}
+
+/// Returns the integer 5
+pub fn default_page_size() -> usize {
+	5
+}
+
+/// This enum defines what pagination strategy (if any) to perform
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
+#[serde(rename_all="snake_case")]
+pub enum PaginationOptions {
+   
+   /// Don't use pagination
+   #[default]
+   None,
+
+   /// Page increment option
+   PageIncrement,
+
+   /// Offset increment option
+   OffsetIncrement,
+
+   /// Cursor option
+   Cursor,
 
 }
 
@@ -141,9 +201,46 @@ impl SourceApi {
 	}
 
 	/// Call the API endpoint with the specified method. Return the response body.
-	async fn call_api(&self) -> Result<Value, Error> {
+	async fn call_api(&mut self) -> Result<Value, Error> {
+
+		// ****************************************************************************************
+		// Unfinished. Add pagination requests in here.
+		// Consider how to handle lots of responses and memory limits.
+		// Maybe try re-factoring all this to build a table provider around reqwests.
+		// https://arrow.apache.org/datafusion/library-user-guide/custom-table-providers.html
+		// Then datafusion won't need to consume memory until the dataframe gets to the destinations.
+		// ****************************************************************************************
+		// decide if making many requests (pagination) or one request (no pagination)
+		match self.pagination {
+			
+			PaginationOptions::None => self.single_request().await,
+			PaginationOptions::PageIncrement => self.page_increment_req().await,
+			_ => self.single_request().await,
+
+		}
+
+	}
+
+	/// Make one request to the API and return the response as JSON
+	async fn single_request(&self) -> Result<Value, Error> {
 
 		// define the request
+		let req = self.build_request();
+
+		// make the request
+		let resp = req.send().await;
+
+		// handle the response
+		let checked_resp = self.check_response(resp)?;
+		let json_resp = self.parse_response(checked_resp).await?;
+
+		Ok(json_resp)
+
+	}
+
+	/// Generate an API request from the parameters in the table config
+	fn build_request(&self) -> RequestBuilder {
+
 		let mut req = self.pick_method();
 		req = self.add_query(req);
 		req = self.add_headers(req);
@@ -156,15 +253,59 @@ impl SourceApi {
 			{:?}
 		"#, req);
 
-		// send the request and wait for a response
-		let resp = req.send().await;
+		req
 
-		// handle the response
-		let checked_resp = self.check_response(resp)?;
-		let json_resp = self.parse_response(checked_resp).await?;
+	}
 
-		Ok(json_resp)
+	/// Perform a series of paginated API requests following the page increment approach.
+	/// This involves adding the page number to the request query and calling the API
+	/// on a loop until the response contains less than the stated page_size.
+	async fn page_increment_req(&mut self) -> Result<Value, Error> {
+		
+		let mut responses = Vec::new();
 
+		// Kepp calling API until it contains less records than the page_size parameter
+		loop {
+
+			// add the pagination parameters to the query parameters
+			self.query.push((self.pagination_page_number_key.clone(), self.pagination_page_number.to_string()));
+			self.query.push((self.pagination_page_size_key.clone(), self.pagination_page_size.to_string()));
+
+			// generate the request
+			let req = self.build_request();
+
+			// make the request and parse the resonse
+			let resp = req.send().await;
+			let checked_resp = self.check_response(resp)?;
+			let json_resp = self.parse_response(checked_resp).await?;
+
+			// Make sure the json value is iterable
+			let mut iter_json = match json_resp {
+				Value::Array(arr) => arr,
+				_ => [json_resp].to_vec()
+			};
+
+			// Store count of records returned
+			let record_count = iter_json.len();
+
+			// Add response data to data from other responses
+			responses.append(&mut iter_json);
+
+			if record_count < self.pagination_page_size {
+				break
+			}
+
+			// remove the pagination parameters from the query parameters
+			let _ = self.query.pop();
+			let _ = self.query.pop();
+
+			// increment the page number
+			self.pagination_page_number += 1;
+
+		}
+
+		Ok(serde_json::Value::Array(responses))
+			
 	}
 
 	/// Start the request by picking the HTTP method
@@ -185,10 +326,11 @@ impl SourceApi {
 	/// If the table is configured to accept a query, add the query params to the url
 	fn add_query(&self, req: RequestBuilder) -> RequestBuilder {
 
-		match &self.query {
-			Some(query_params) => req.query(&query_params),
-			None => req
-		}
+		if !self.query.is_empty() {
+			return req.query(&self.query)
+		};
+
+		req
 
 	}
 
@@ -351,7 +493,14 @@ mod tests {
 	use super::*;
 	use chrono::{ Utc, TimeZone, naive::NaiveDate, naive::NaiveDateTime };
 	use http::header::HOST;
-	use crate::tables::test_utils::{ basic_mock_api, api_resp_batch, nested_api_resp_batch, bad_mock_api };
+	use crate::tables::test_utils::{ 
+		basic_mock_api, 
+		api_resp_batch, 
+		nested_api_resp_batch, 
+		bad_mock_api, 
+		paginated_mock_api,
+		paginated_resp_batch
+	};
 
 	#[test]
     fn table_with_minimal_config() {
@@ -368,7 +517,7 @@ mod tests {
         assert!(matches!(table.method, HttpMethod::Get));
         assert_eq!(table.select_field, None);
         assert_eq!(table.timeout, None);
-        assert_eq!(table.query, None);
+        assert_eq!(table.query, Vec::new());
         assert_eq!(table.basic_auth, None);
         assert_eq!(table.headers, HeaderMap::new());
         assert_eq!(table.bookmark, chrono::DateTime::<Utc>::MIN_UTC);
@@ -376,6 +525,11 @@ mod tests {
         assert!(matches!(table.on_fail, FailAction::Stop));
         assert!(matches!(table.one_request, false));
         assert_eq!(table.schema, None);
+        assert!(matches!(table.pagination, PaginationOptions::None));
+        assert_eq!(table.pagination_page_number_key, "page");
+        assert_eq!(table.pagination_page_number, 0);
+        assert_eq!(table.pagination_page_size_key, "page_size");
+        assert_eq!(table.pagination_page_size, 5);
 
     }
 
@@ -395,6 +549,11 @@ mod tests {
             poll_interval = 20000
             on_fail = "skip"
             one_request = true
+            pagination = "page_increment"
+            pagination_page_number_key = "page_number"
+            pagination_page_number = 1
+            pagination_page_size_key = "size_of_page"
+            pagination_page_size = 10
         "#);
 
         let table: SourceApi = toml::from_str(&content).unwrap();
@@ -404,12 +563,17 @@ mod tests {
         assert!(matches!(table.method, HttpMethod::Put));
         assert_eq!(table.select_field, Some(vec!["cards".to_string()]));
         assert_eq!(table.timeout, Some(Duration::from_secs(10)));
-        assert_eq!(table.query, Some(vec![("query_key".to_string(), "query_value".to_string())]));
+        assert_eq!(table.query, vec![("query_key".to_string(), "query_value".to_string())]);
         assert_eq!(table.basic_auth, Some(("username".to_string(), "password".to_string())));
         assert_eq!(table.poll_interval, 20_000);
         assert!(matches!(table.on_fail, FailAction::Skip));
         assert!(matches!(table.one_request, true));
         assert_eq!(table.schema, None);
+        assert!(matches!(table.pagination, PaginationOptions::PageIncrement));
+        assert_eq!(table.pagination_page_number_key, "page_number");
+        assert_eq!(table.pagination_page_number, 1);
+        assert_eq!(table.pagination_page_size_key, "size_of_page");
+        assert_eq!(table.pagination_page_size, 10);
 
         let dt: NaiveDateTime = NaiveDate::from_ymd_opt(2023, 8, 21).unwrap().and_hms_opt(0, 55, 0).unwrap();
         let datetime_utc = Utc.from_utc_datetime(&dt);
@@ -826,6 +990,37 @@ mod tests {
         let read_result = table.read_new_data().await;
 
         assert!(read_result.is_err());
+
+    }
+
+    #[tokio::test]
+    async fn can_make_page_increment_paginated_requests() {
+    
+    	let mock_api = paginated_mock_api();
+
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		pagination = "page_increment"
+            pagination_page_number_key = "page"
+            pagination_page_number = 0
+            pagination_page_size_key = "page_size"
+            pagination_page_size = 5
+    	"#, mock_api.url("/user"));
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        println!("{:?}", df_data);
+
+        let expected_batch = paginated_resp_batch();
+
+        assert!(read_success);
+        assert!(df_data.contains(&expected_batch));
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
 
     }
 

@@ -45,7 +45,7 @@ impl Drop for TestDir {
 
 }
 
-/// A function for creating a simple mock server
+/// A function for creating a simple mock API server
 pub fn basic_mock_api(method: &str, query: bool, header: bool, auth: bool, body: bool) -> httpmock::MockServer {
 
     // Start a mock server.
@@ -124,6 +124,56 @@ pub fn bad_mock_api(status: u16) -> httpmock::MockServer {
 
 }
 
+/// A function for creating a mock API server responding to paginated requests
+pub fn paginated_mock_api() -> httpmock::MockServer {
+
+    // Start a mock server.
+    let server = httpmock::MockServer::start();
+
+    // Create a mock on the server.
+    let _mock = server.mock(|when, then| {
+        
+        let _ = when
+            .path("/user")
+            .method("GET")
+            .query_param("page", "0")
+            .query_param("page_size", "5");
+            
+        let _ = then
+            .status(200)
+            .header("content-type", "application/json")
+            .json_body(json!([
+                {"id": 1},
+                {"id": 2},
+                {"id": 3},
+                {"id": 4},
+                {"id": 5}
+            ]));
+
+    });
+
+    let _mock = server.mock(|when, then| {
+
+        let _ = when
+            .path("/user")
+            .method("GET")
+            .query_param("page", "1")
+            .query_param("page_size", "5");
+            
+        let _ = then
+            .status(200)
+            .header("content-type", "application/json")
+            .json_body(json!([
+                {"id": 6},
+                {"id": 7}
+            ]));
+
+    });
+
+    server
+
+}
+
 /// A function for generating a test record batch to test an api response against
 pub fn api_resp_batch() -> RecordBatch {
 
@@ -178,6 +228,18 @@ pub fn nested_api_resp_batch() -> RecordBatch {
             Arc::new(Field::new("postcode", DataType::Utf8, true)),
             Arc::new(StringArray::from(vec!["S001AB"])) as ArrayRef,
         ),
+    ]).into()
+
+}
+
+/// A test record batch for the paginated requests
+pub fn paginated_resp_batch() -> RecordBatch {
+
+    StructArray::from(vec![
+        (
+            Arc::new(Field::new("id", DataType::Int64, true)),
+            Arc::new(Int64Array::from(vec![1,2,3,4,5,6,7])) as ArrayRef,
+        )
     ]).into()
 
 }
