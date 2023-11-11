@@ -494,11 +494,9 @@ mod tests {
 	use chrono::{ Utc, TimeZone, naive::NaiveDate, naive::NaiveDateTime };
 	use http::header::HOST;
 	use crate::tables::test_utils::{ 
-		basic_mock_api, 
+		mock_api, 
 		api_resp_batch, 
 		nested_api_resp_batch, 
-		bad_mock_api, 
-		paginated_mock_api,
 		paginated_resp_batch
 	};
 
@@ -698,7 +696,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_get_request() {
     
-    	let mock_api = basic_mock_api("GET", false, false, false, false);
+    	let mock_api = mock_api("GET", 200);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -723,7 +721,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_post_request() {
     
-    	let mock_api = basic_mock_api("POST", false, false, false, false);
+    	let mock_api = mock_api("POST", 200);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -749,7 +747,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_put_request() {
     
-    	let mock_api = basic_mock_api("PUT", false, false, false, false);
+    	let mock_api = mock_api("PUT", 200);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -775,7 +773,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_patch_request() {
     
-    	let mock_api = basic_mock_api("PATCH", false, false, false, false);
+    	let mock_api = mock_api("PATCH", 200);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -801,7 +799,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_single_delete_request() {
     
-    	let mock_api = basic_mock_api("DELETE", false, false, false, false);
+    	let mock_api = mock_api("DELETE", 200);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -827,7 +825,7 @@ mod tests {
     #[tokio::test]
     async fn can_select_fields_from_resp() {
     
-    	let mock_api = basic_mock_api("GET", false, false, false, false);
+    	let mock_api = mock_api("GET", 200);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -853,7 +851,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_request_including_a_query() {
     
-    	let mock_api = basic_mock_api("GET", true, false, false, false);
+    	let mock_api = mock_api("GET", 200);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -879,7 +877,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_request_including_a_header() {
     
-    	let mock_api = basic_mock_api("GET", false, true, false, false);
+    	let mock_api = mock_api("GET", 200);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -905,7 +903,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_request_including_basic_auth() {
     
-    	let mock_api = basic_mock_api("GET", false, false, true, false);
+    	let mock_api = mock_api("GET", 200);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -931,7 +929,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_request_including_body() {
     
-    	let mock_api = basic_mock_api("POST", false, false, false, true);
+    	let mock_api = mock_api("POST", 200);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -958,7 +956,7 @@ mod tests {
     #[tokio::test]
     async fn throws_error_when_400_code_is_received() {
     
-    	let mock_api = bad_mock_api(404);
+    	let mock_api = mock_api("GET", 404);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -977,7 +975,7 @@ mod tests {
     #[tokio::test]
     async fn throws_error_when_500_code_is_received() {
     
-    	let mock_api = bad_mock_api(500);
+    	let mock_api = mock_api("GET", 500);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -996,7 +994,7 @@ mod tests {
     #[tokio::test]
     async fn can_make_page_increment_paginated_requests() {
     
-    	let mock_api = paginated_mock_api();
+    	let mock_api = mock_api("GET", 200);
 
     	// define table config using mock servers url
     	let config = format!(r#"
@@ -1006,7 +1004,7 @@ mod tests {
             pagination_page_number = 0
             pagination_page_size_key = "page_size"
             pagination_page_size = 5
-    	"#, mock_api.url("/user"));
+    	"#, mock_api.url("/paged_user"));
 
         // Create the table and read in new data from the mock api.
         // Parse the table as a vec of record batches.

@@ -45,102 +45,108 @@ impl Drop for TestDir {
 
 }
 
-/// A function for creating a simple mock API server
-pub fn basic_mock_api(method: &str, query: bool, header: bool, auth: bool, body: bool) -> httpmock::MockServer {
+/// A function for running a mock API server
+pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
 
     // Start a mock server.
     let server = httpmock::MockServer::start();
 
-    // Create a mock on the server.
+    // Define a basic response
+    let basic_resp = json!({ 
+        "name": "Hans", 
+        "id": 1,
+        "address": {
+            "number": 2,
+            "line": "terrace road",
+            "postcode": "S001AB"
+        }
+    });
+
+    // Endpoint with no specific requirements beyond the method
     let _mock = server.mock(|when, then| {
-        
-        if query {
-            let _ = when
-                .path("/user")
-                .method(method)
-                .query_param("query", "Metallica");
-        }
-        else if header {
-            let _ = when
-                .path("/user")
-                .method(method)
-                .header("key", "value");
-        }
-        else if auth {
-            let _ = when
-                .path("/user")
-                .method(method)
-                .header("Authorization", "Basic ZGVtbzpwQDU1dzByZA==");
-        }
-        else if body {
-            let _ = when
-                .path("/user")
-                .method(method)
-                .header("content-type", "application/json")
-                .json_body(json!({ "name": "Hans" }));
-        }
-        else {
-            let _ = when
-                .path("/user")
-                .method(method);
-        }
+
+        let _ = when
+            .path("/user")
+            .method(method);
             
         let _ = then
-            .status(200)
+            .status(return_status)
             .header("content-type", "application/json")
-            .json_body(json!({ 
-                "name": "Hans", 
-                "id": 1,
-                "address": {
-                    "number": 2,
-                    "line": "terrace road",
-                    "postcode": "S001AB"
-                }
-            }));
+            .json_body(basic_resp.clone());
     });
 
-    server
-
-}
-
-/// Create a mock server that returns the specified staus codes
-pub fn bad_mock_api(status: u16) -> httpmock::MockServer {
-
-    // Start a mock server.
-    let server = httpmock::MockServer::start();
-
-    // Create a mock on the server.
-    let _mock = server.mock(|when, then| {
-            
-        let _ = when
-            .path("/user")
-            .method("GET");
-            
-        let _ = then
-            .status(status);
-    });
-
-    server
-
-}
-
-/// A function for creating a mock API server responding to paginated requests
-pub fn paginated_mock_api() -> httpmock::MockServer {
-
-    // Start a mock server.
-    let server = httpmock::MockServer::start();
-
-    // Create a mock on the server.
+    // Endpoint requiring query paramters
     let _mock = server.mock(|when, then| {
         
         let _ = when
             .path("/user")
-            .method("GET")
+            .method(method)
+            .query_param("query", "Metallica");
+
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(basic_resp.clone());
+            
+    });
+
+    // Endpoint requiring a header
+    let _mock = server.mock(|when, then| {
+        
+        let _ = when
+            .path("/user")
+            .method(method)
+            .header("key", "value");
+
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(basic_resp.clone());
+            
+    });
+
+    // Endpoint requiring authentication
+    let _mock = server.mock(|when, then| {
+        
+        let _ = when
+            .path("/user")
+            .method(method)
+            .header("Authorization", "Basic ZGVtbzpwQDU1dzByZA==");
+
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(basic_resp.clone());
+            
+    });
+
+    // Endpoint requiring a json encoded body
+    let _mock = server.mock(|when, then| {
+        
+        let _ = when
+            .path("/user")
+            .method(method)
+            .header("content-type", "application/json")
+            .json_body(json!({ "name": "Hans" }));
+
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(basic_resp.clone());
+            
+    });
+
+    // Endpoint for first page of pagination
+    let _mock = server.mock(|when, then| {
+        
+        let _ = when
+            .path("/paged_user")
+            .method(method)
             .query_param("page", "0")
             .query_param("page_size", "5");
             
         let _ = then
-            .status(200)
+            .status(return_status)
             .header("content-type", "application/json")
             .json_body(json!([
                 {"id": 1},
@@ -152,16 +158,17 @@ pub fn paginated_mock_api() -> httpmock::MockServer {
 
     });
 
+    // Endpoint for second page of pagination
     let _mock = server.mock(|when, then| {
 
         let _ = when
-            .path("/user")
-            .method("GET")
+            .path("/paged_user")
+            .method(method)
             .query_param("page", "1")
             .query_param("page_size", "5");
             
         let _ = then
-            .status(200)
+            .status(return_status)
             .header("content-type", "application/json")
             .json_body(json!([
                 {"id": 6},
@@ -173,6 +180,7 @@ pub fn paginated_mock_api() -> httpmock::MockServer {
     server
 
 }
+
 
 /// A function for generating a test record batch to test an api response against
 pub fn api_resp_batch() -> RecordBatch {
