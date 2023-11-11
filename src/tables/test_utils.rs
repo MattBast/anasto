@@ -79,7 +79,7 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
     let _mock = server.mock(|when, then| {
         
         let _ = when
-            .path("/user")
+            .path("/query_user")
             .method(method)
             .query_param("query", "Metallica");
 
@@ -94,7 +94,7 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
     let _mock = server.mock(|when, then| {
         
         let _ = when
-            .path("/user")
+            .path("/header_user")
             .method(method)
             .header("key", "value");
 
@@ -109,7 +109,7 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
     let _mock = server.mock(|when, then| {
         
         let _ = when
-            .path("/user")
+            .path("/auth_user")
             .method(method)
             .header("Authorization", "Basic ZGVtbzpwQDU1dzByZA==");
 
@@ -124,7 +124,7 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
     let _mock = server.mock(|when, then| {
         
         let _ = when
-            .path("/user")
+            .path("/body_user")
             .method(method)
             .header("content-type", "application/json")
             .json_body(json!({ "name": "Hans" }));
@@ -136,7 +136,7 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
             
     });
 
-    // Endpoint for first page of pagination
+    // Endpoint for first page of page increment pagination
     let _mock = server.mock(|when, then| {
         
         let _ = when
@@ -158,7 +158,7 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
 
     });
 
-    // Endpoint for second page of pagination
+    // Endpoint for second page of page increment pagination
     let _mock = server.mock(|when, then| {
 
         let _ = when
@@ -173,6 +173,47 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
             .json_body(json!([
                 {"id": 6},
                 {"id": 7}
+            ]));
+
+    });
+
+    // Endpoint for first page of offset pagination
+    let _mock = server.mock(|when, then| {
+        
+        let _ = when
+            .path("/paged_offset_user")
+            .method(method)
+            .query_param("offset", "0")
+            .query_param("page_size", "5");
+            
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(json!([
+                {"id": 10},
+                {"id": 20},
+                {"id": 30},
+                {"id": 40},
+                {"id": 50}
+            ]));
+
+    });
+
+    // Endpoint for second page of offset pagination
+    let _mock = server.mock(|when, then| {
+
+        let _ = when
+            .path("/paged_offset_user")
+            .method(method)
+            .query_param("offset", "5")
+            .query_param("page_size", "5");
+            
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(json!([
+                {"id": 60},
+                {"id": 70}
             ]));
 
     });
@@ -247,6 +288,30 @@ pub fn paginated_resp_batch() -> RecordBatch {
         (
             Arc::new(Field::new("id", DataType::Int64, true)),
             Arc::new(Int64Array::from(vec![1,2,3,4,5,6,7])) as ArrayRef,
+        )
+    ]).into()
+
+}
+
+/// A test record batch for the paginated requests
+pub fn reduced_paginated_resp_batch() -> RecordBatch {
+
+    StructArray::from(vec![
+        (
+            Arc::new(Field::new("id", DataType::Int64, true)),
+            Arc::new(Int64Array::from(vec![1,2,3,4,5])) as ArrayRef,
+        )
+    ]).into()
+
+}
+
+/// A test record batch for the paginated requests
+pub fn paginated_offset_resp_batch() -> RecordBatch {
+
+    StructArray::from(vec![
+        (
+            Arc::new(Field::new("id", DataType::Int64, true)),
+            Arc::new(Int64Array::from(vec![10,20,30,40,50,60,70])) as ArrayRef,
         )
     ]).into()
 

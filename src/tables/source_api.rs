@@ -104,10 +104,10 @@ pub struct SourceApi {
     #[serde(default)]
     pub pagination: PaginationOptions,
 
-    /// Optional field. States the name of the page number parameter that will
+    /// Optional field. States the name of the page number or offset parameter that will
     /// increment during pagination. Defaults to "page_size".
     #[serde(default="default_page_number_key")]
-    pub pagination_page_number_key: String,
+    pub pagination_page_token_key: String,
 
     /// Optional field. Keeps track of what page the pagination needs to request. 
     /// Defaults to 0.
@@ -124,6 +124,16 @@ pub struct SourceApi {
     #[serde(default="default_page_size")]
     pub pagination_page_size: usize,
 
+    /// Optional field. States the maximum number of requests a paginated call can make. 
+    /// Defaults to 100.
+    #[serde(default="default_page_requests")]
+    pub max_pagination_requests: usize,
+
+    /// Optional field. Keeps track of how many records the pagination requests 
+    /// have received. Defaults to 0.
+    #[serde(default)]
+    pub pagination_offset: usize,
+
 }
 
 /// Returns the string "page"
@@ -139,6 +149,11 @@ pub fn default_page_size_key() -> String {
 /// Returns the integer 5
 pub fn default_page_size() -> usize {
 	5
+}
+
+/// Returns the integer 100
+pub fn default_page_requests() -> usize {
+	100
 }
 
 /// This enum defines what pagination strategy (if any) to perform
@@ -215,6 +230,7 @@ impl SourceApi {
 			
 			PaginationOptions::None => self.single_request().await,
 			PaginationOptions::PageIncrement => self.page_increment_req().await,
+			PaginationOptions::OffsetIncrement => self.page_offset_req().await,
 			_ => self.single_request().await,
 
 		}
@@ -255,57 +271,6 @@ impl SourceApi {
 
 		req
 
-	}
-
-	/// Perform a series of paginated API requests following the page increment approach.
-	/// This involves adding the page number to the request query and calling the API
-	/// on a loop until the response contains less than the stated page_size.
-	async fn page_increment_req(&mut self) -> Result<Value, Error> {
-		
-		let mut responses = Vec::new();
-
-		// Kepp calling API until it contains less records than the page_size parameter
-		loop {
-
-			// add the pagination parameters to the query parameters
-			self.query.push((self.pagination_page_number_key.clone(), self.pagination_page_number.to_string()));
-			self.query.push((self.pagination_page_size_key.clone(), self.pagination_page_size.to_string()));
-
-			// generate the request
-			let req = self.build_request();
-
-			// make the request and parse the resonse
-			let resp = req.send().await;
-			let checked_resp = self.check_response(resp)?;
-			let json_resp = self.parse_response(checked_resp).await?;
-
-			// Make sure the json value is iterable
-			let mut iter_json = match json_resp {
-				Value::Array(arr) => arr,
-				_ => [json_resp].to_vec()
-			};
-
-			// Store count of records returned
-			let record_count = iter_json.len();
-
-			// Add response data to data from other responses
-			responses.append(&mut iter_json);
-
-			if record_count < self.pagination_page_size {
-				break
-			}
-
-			// remove the pagination parameters from the query parameters
-			let _ = self.query.pop();
-			let _ = self.query.pop();
-
-			// increment the page number
-			self.pagination_page_number += 1;
-
-		}
-
-		Ok(serde_json::Value::Array(responses))
-			
 	}
 
 	/// Start the request by picking the HTTP method
@@ -440,10 +405,7 @@ impl SourceApi {
 		let mut reader = ReaderBuilder::new(Arc::new(schema)).build_decoder().unwrap();
 
 		// Make sure the json value is iterable
-		let iter_json = match json {
-			Value::Array(arr) => arr,
-			_ => [json].to_vec()
-		};
+		let (_, iter_json) = self.resp_to_iter(json);
 
 		// Parse the response to an Arrow RecordBatch
 		reader.serialize(&iter_json).unwrap();
@@ -486,6 +448,119 @@ impl SourceApi {
 
 	}
 
+	/// Perform a series of paginated API requests following the page increment approach.
+	/// This involves adding the page number to the request query and calling the API
+	/// on a loop until the response contains less than the stated page_size.
+	async fn page_increment_req(&mut self) -> Result<Value, Error> {
+		
+		let mut responses = Vec::new();
+
+		// Kepp calling API until it contains less records than the page_size parameter
+		loop {
+
+			// Add the pagination parameters to the query parameters
+			self.add_pagination_params();
+
+			// Make the request and parse the resonse
+			let resp = self.single_request().await?;
+
+			// Make sure the json value is iterable
+			let (record_count, mut iter_resp) = self.resp_to_iter(resp);
+
+			// Add response data to data from other responses
+			responses.append(&mut iter_resp);
+
+			// Remove the pagination parameters from the query parameters
+			self.remove_pagination_params();
+
+			// increment the page number
+			self.pagination_page_number += 1;
+
+			// Decide if finished making pagfinated requests
+			if record_count < self.pagination_page_size || record_count >= self.max_pagination_requests {
+				break
+			}
+
+		}
+
+		Ok(serde_json::Value::Array(responses))
+			
+	}
+
+	/// Add the pagination parameters to the query parameters
+	fn add_pagination_params(&mut self) {
+		
+		match self.pagination {
+			PaginationOptions::None => (),
+			PaginationOptions::PageIncrement => {
+				self.query.push((self.pagination_page_token_key.clone(), self.pagination_page_number.to_string()));
+				self.query.push((self.pagination_page_size_key.clone(), self.pagination_page_size.to_string()));
+			},
+			PaginationOptions::OffsetIncrement => {
+				self.query.push((self.pagination_page_token_key.clone(), self.pagination_offset.to_string()));
+				self.query.push((self.pagination_page_size_key.clone(), self.pagination_page_size.to_string()));	
+			},
+			_ => (),
+		}
+	}
+
+	/// Make sure the json value representation of an API response is iterable.
+	/// Returns json array as well as length of that array.
+	fn resp_to_iter(&self, resp: Value) -> (usize, Vec<Value>) {
+
+		match resp {
+			Value::Array(arr) => (arr.len(), arr),
+			_ => (1, [resp].to_vec())
+		}
+
+	}
+
+	/// Remove the pagination parameters from the query parameters
+	fn remove_pagination_params(&mut self) {
+		let _ = self.query.pop();
+		let _ = self.query.pop();
+	}
+
+	/// Perform a series of paginated API requests following the page offset approach.
+	/// This involves adding the number of records received (the offset) to the request 
+	/// query and calling the API on a loop until the response contains less than the 
+	/// stated page_size.
+	async fn page_offset_req(&mut self) -> Result<Value, Error> {
+		
+		let mut responses = Vec::new();
+
+		// Kepp calling API until it contains less records than the page_size parameter
+		loop {
+
+			// Add the pagination parameters to the query parameters
+			self.add_pagination_params();
+
+			// Make the request and parse the resonse
+			let resp = self.single_request().await?;
+
+			// Make sure the json value is iterable
+			let (record_count, mut iter_resp) = self.resp_to_iter(resp);
+
+			// Add response data to data from other responses
+			responses.append(&mut iter_resp);
+
+			// Remove the pagination parameters from the query parameters
+			self.remove_pagination_params();
+
+			// increment the page number
+			self.pagination_offset += self.pagination_page_size;
+
+			// Decide if finished making pagfinated requests
+			if record_count < self.pagination_page_size || record_count >= self.max_pagination_requests {
+				break
+			}
+
+		}
+
+		Ok(serde_json::Value::Array(responses))
+			
+	}
+
 }
 
 #[cfg(test)]
@@ -497,7 +572,9 @@ mod tests {
 		mock_api, 
 		api_resp_batch, 
 		nested_api_resp_batch, 
-		paginated_resp_batch
+		paginated_resp_batch,
+		reduced_paginated_resp_batch,
+		paginated_offset_resp_batch
 	};
 
 	#[test]
@@ -524,7 +601,7 @@ mod tests {
         assert!(matches!(table.one_request, false));
         assert_eq!(table.schema, None);
         assert!(matches!(table.pagination, PaginationOptions::None));
-        assert_eq!(table.pagination_page_number_key, "page");
+        assert_eq!(table.pagination_page_token_key, "page");
         assert_eq!(table.pagination_page_number, 0);
         assert_eq!(table.pagination_page_size_key, "page_size");
         assert_eq!(table.pagination_page_size, 5);
@@ -548,7 +625,7 @@ mod tests {
             on_fail = "skip"
             one_request = true
             pagination = "page_increment"
-            pagination_page_number_key = "page_number"
+            pagination_page_token_key = "page_number"
             pagination_page_number = 1
             pagination_page_size_key = "size_of_page"
             pagination_page_size = 10
@@ -568,7 +645,7 @@ mod tests {
         assert!(matches!(table.one_request, true));
         assert_eq!(table.schema, None);
         assert!(matches!(table.pagination, PaginationOptions::PageIncrement));
-        assert_eq!(table.pagination_page_number_key, "page_number");
+        assert_eq!(table.pagination_page_token_key, "page_number");
         assert_eq!(table.pagination_page_number, 1);
         assert_eq!(table.pagination_page_size_key, "size_of_page");
         assert_eq!(table.pagination_page_size, 10);
@@ -858,7 +935,7 @@ mod tests {
     		endpoint_url = "{}"
     		one_request = true
     		query = [["query", "Metallica"]]
-    	"#, mock_api.url("/user"));
+    	"#, mock_api.url("/query_user"));
 
         // Create the table and read in new data from the mock api.
         // Parse the table as a vec of record batches.
@@ -884,7 +961,7 @@ mod tests {
     		endpoint_url = "{}"
     		one_request = true
     		headers = [["key", "value"]]
-    	"#, mock_api.url("/user"));
+    	"#, mock_api.url("/header_user"));
 
         // Create the table and read in new data from the mock api.
         // Parse the table as a vec of record batches.
@@ -910,7 +987,7 @@ mod tests {
     		endpoint_url = "{}"
     		one_request = true
     		basic_auth = ["demo", "p@55w0rd"]
-    	"#, mock_api.url("/user"));
+    	"#, mock_api.url("/auth_user"));
 
         // Create the table and read in new data from the mock api.
         // Parse the table as a vec of record batches.
@@ -937,7 +1014,7 @@ mod tests {
     		method = "post"
     		one_request = true
     		body = {{ "name" = "Hans" }}
-    	"#, mock_api.url("/user"));
+    	"#, mock_api.url("/body_user"));
 
         // Create the table and read in new data from the mock api.
         // Parse the table as a vec of record batches.
@@ -1000,7 +1077,7 @@ mod tests {
     	let config = format!(r#"
     		endpoint_url = "{}"
     		pagination = "page_increment"
-            pagination_page_number_key = "page"
+            pagination_page_token_key = "page"
             pagination_page_number = 0
             pagination_page_size_key = "page_size"
             pagination_page_size = 5
@@ -1013,6 +1090,65 @@ mod tests {
         let df_data = df.collect().await.unwrap();
 
         let expected_batch = paginated_resp_batch();
+
+        assert!(read_success);
+        assert!(df_data.contains(&expected_batch));
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+
+    }
+
+    #[tokio::test]
+    async fn pagination_max_requests_can_limit_calls() {
+    
+    	let mock_api = mock_api("GET", 200);
+
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		pagination = "page_increment"
+            pagination_page_token_key = "page"
+            pagination_page_number = 0
+            pagination_page_size_key = "page_size"
+            pagination_page_size = 5
+            max_pagination_requests = 1
+    	"#, mock_api.url("/paged_user"));
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        let expected_batch = reduced_paginated_resp_batch();
+
+        assert!(read_success);
+        assert!(df_data.contains(&expected_batch));
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+
+    }
+
+    #[tokio::test]
+    async fn can_make_offset_paginated_requests() {
+    
+    	let mock_api = mock_api("GET", 200);
+
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		pagination = "offset_increment"
+            pagination_page_token_key = "offset"
+            pagination_page_number = 0
+            pagination_page_size_key = "page_size"
+            pagination_page_size = 5
+    	"#, mock_api.url("/paged_offset_user"));
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        let expected_batch = paginated_offset_resp_batch();
 
         assert!(read_success);
         assert!(df_data.contains(&expected_batch));
