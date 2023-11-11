@@ -426,6 +426,7 @@ fn fields_from_json(json: &serde_json::Value, field_name: &String) -> Fields {
             Fields::from(fields_vec)
 
         },
+        Value::Array(arr) => fields_from_json(&arr[0], field_name),
         _ => Fields::from(vec![field_from_json(json, field_name)]),
     }
 

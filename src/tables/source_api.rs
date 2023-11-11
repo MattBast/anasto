@@ -1014,8 +1014,6 @@ mod tests {
         let (read_success, df) = table.read_new_data().await.unwrap();
         let df_data = df.collect().await.unwrap();
 
-        println!("{:?}", df_data);
-
         let expected_batch = paginated_resp_batch();
 
         assert!(read_success);
