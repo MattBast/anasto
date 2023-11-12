@@ -589,7 +589,8 @@ mod tests {
 		paginated_resp_batch,
 		reduced_paginated_resp_batch,
 		paginated_offset_resp_batch,
-		many_nested_api_resp_batch
+		many_nested_api_resp_batch,
+		paginated_offset_resp_batch_filtered
 	};
 
 	#[test]
@@ -1190,6 +1191,36 @@ mod tests {
         let df_data = df.collect().await.unwrap();
 
         let expected_batch = paginated_offset_resp_batch();
+
+        assert!(read_success);
+        assert!(df_data.contains(&expected_batch));
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+
+    }
+
+    #[tokio::test]
+    async fn can_make_paginated_requests_and_select_field() {
+    
+    	let mock_api = mock_api("GET", 200);
+
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		select_field = ["name"]
+    		pagination = "offset_increment"
+            pagination_page_token_key = "offset"
+            pagination_page_number = 0
+            pagination_page_size_key = "page_size"
+            pagination_page_size = 5
+    	"#, mock_api.url("/paged_offset_user"));
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        let expected_batch = paginated_offset_resp_batch_filtered();
 
         assert!(read_success);
         assert!(df_data.contains(&expected_batch));

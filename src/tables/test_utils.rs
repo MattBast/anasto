@@ -224,11 +224,11 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
             .status(return_status)
             .header("content-type", "application/json")
             .json_body(json!([
-                {"id": 10},
-                {"id": 20},
-                {"id": 30},
-                {"id": 40},
-                {"id": 50}
+                {"id": 10, "name": {"first": "ten"}},
+                {"id": 20, "name": {"first": "twenty"}},
+                {"id": 30, "name": {"first": "thirty"}},
+                {"id": 40, "name": {"first": "fourty"}},
+                {"id": 50, "name": {"first": "fifty"}}
             ]));
 
     });
@@ -246,8 +246,8 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
             .status(return_status)
             .header("content-type", "application/json")
             .json_body(json!([
-                {"id": 60},
-                {"id": 70}
+                {"id": 60, "name": {"first": "sixty"}},
+                {"id": 70, "name": {"first": "seventy"}}
             ]));
 
     });
@@ -366,7 +366,30 @@ pub fn paginated_offset_resp_batch() -> RecordBatch {
         (
             Arc::new(Field::new("id", DataType::Int64, true)),
             Arc::new(Int64Array::from(vec![10,20,30,40,50,60,70])) as ArrayRef,
-        )
+        ),
+        (
+            Arc::new(Field::new("name", DataType::Struct(Fields::from(vec![
+                Field::new("first", DataType::Utf8, true),
+            ])), true)),
+            Arc::new(StructArray::from(vec![
+                (
+                    Arc::new(Field::new("first", DataType::Utf8, true)),
+                    Arc::new(StringArray::from(vec!["ten","twenty","thirty","fourty","fifty","sixty","seventy"])) as ArrayRef,
+                ),
+            ])) as ArrayRef,
+        ),
+    ]).into()
+
+}
+
+/// A test record batch for the filtered paginated requests
+pub fn paginated_offset_resp_batch_filtered() -> RecordBatch {
+
+    StructArray::from(vec![
+        (
+            Arc::new(Field::new("first", DataType::Utf8, true)),
+            Arc::new(StringArray::from(vec!["ten","twenty","thirty","fourty","fifty","sixty","seventy"])) as ArrayRef,
+        ),
     ]).into()
 
 }
