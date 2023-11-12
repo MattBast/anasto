@@ -75,6 +75,40 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
             .json_body(basic_resp.clone());
     });
 
+    // Endpoint returning many users
+    let _mock = server.mock(|when, then| {
+
+        let _ = when
+            .path("/many_users")
+            .method(method);
+        
+        let array_resp = json!([
+            { 
+                "name": "Hans", 
+                "id": 1,
+                "address": {
+                    "number": 1,
+                    "line": "terrace road",
+                    "postcode": "S001AB"
+                }
+            },
+            { 
+                "name": "Zimmer", 
+                "id": 2,
+                "address": {
+                    "number": 2,
+                    "line": "new road",
+                    "postcode": "S002AB"
+                }
+            }
+        ]);
+
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(array_resp);
+    });
+
     // Endpoint requiring query paramters
     let _mock = server.mock(|when, then| {
         
@@ -276,6 +310,26 @@ pub fn nested_api_resp_batch() -> RecordBatch {
         (
             Arc::new(Field::new("postcode", DataType::Utf8, true)),
             Arc::new(StringArray::from(vec!["S001AB"])) as ArrayRef,
+        ),
+    ]).into()
+
+}
+
+/// Same as the `nested_api_resp_batch` function but returns 2 rows of data
+pub fn many_nested_api_resp_batch() -> RecordBatch {
+
+    StructArray::from(vec![
+        (
+            Arc::new(Field::new("line", DataType::Utf8, true)),
+            Arc::new(StringArray::from(vec!["terrace road", "new road"])) as ArrayRef,
+        ),
+        (
+            Arc::new(Field::new("number", DataType::Int64, true)),
+            Arc::new(Int64Array::from(vec![1,2])) as ArrayRef,
+        ),
+        (
+            Arc::new(Field::new("postcode", DataType::Utf8, true)),
+            Arc::new(StringArray::from(vec!["S001AB", "S002AB"])) as ArrayRef,
         ),
     ]).into()
 
