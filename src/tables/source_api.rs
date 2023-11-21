@@ -31,7 +31,7 @@ use datafusion::error::Result;
 
 use reqwest::{ Url, header::HeaderMap, RequestBuilder, Response };
 use arrow_schema::Schema;
-use serde_json::Value;
+use serde_json::{ Value, json };
 use arrow_array::RecordBatch;
 use arrow_json::ReaderBuilder;
 
@@ -134,6 +134,24 @@ pub struct SourceApi {
     #[serde(default)]
     pub pagination_offset: usize,
 
+    /// Optional field. Select the field that will be used to request the next page of
+    /// results.
+	#[serde(default)]
+	pub pagination_cursor_field: Option<Vec<String>>,
+
+	/// Optional field. Define which record in a response contains the cursor. Defaults 
+	/// to the last record.
+	#[serde(default)]
+	pub pagination_cursor_record: PaginationCursorRecord,
+
+	/// Stores the cursor used to make the next cursor Pagination request.
+	#[serde(default)]
+	pub pagination_cursor: Option<String>,
+
+	/// Optional field. State where the pagination cursor field can be found.
+	#[serde(default)]
+	pub pagination_cursor_location: CursorLocation,
+
 }
 
 /// Returns the string "page"
@@ -176,6 +194,35 @@ pub enum PaginationOptions {
 
 }
 
+/// This enum defines which record of a response the pagination cursor can be foind in
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
+#[serde(rename_all="snake_case")]
+pub enum PaginationCursorRecord {
+   
+   /// The last record
+   #[default]
+   Last,
+
+   /// The first record
+   First,
+
+}
+
+
+/// This enum defines where the pagination cursor field can be found
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
+#[serde(rename_all="snake_case")]
+pub enum CursorLocation {
+   
+   /// The header of the respose
+   #[default]
+   Body,
+
+   /// The header of the response
+   Header,
+
+}
+
 
 impl SourceApi {
 
@@ -215,23 +262,16 @@ impl SourceApi {
 
 	}
 
-	/// Call the API endpoint with the specified method. Return the response body.
+	/// Call the API endpoint. Return the response body as a JSON value.
 	async fn call_api(&mut self) -> Result<Value, Error> {
 
-		// ****************************************************************************************
-		// Unfinished. Add pagination requests in here.
-		// Consider how to handle lots of responses and memory limits.
-		// Maybe try re-factoring all this to build a table provider around reqwests.
-		// https://arrow.apache.org/datafusion/library-user-guide/custom-table-providers.html
-		// Then datafusion won't need to consume memory until the dataframe gets to the destinations.
-		// ****************************************************************************************
 		// decide if making many requests (pagination) or one request (no pagination)
 		match self.pagination {
 			
 			PaginationOptions::None => self.single_request().await,
 			PaginationOptions::PageIncrement => self.page_increment_req().await,
 			PaginationOptions::OffsetIncrement => self.page_offset_req().await,
-			_ => self.single_request().await,
+			PaginationOptions::Cursor => self.cursor_req().await,
 
 		}
 
@@ -468,9 +508,12 @@ impl SourceApi {
 	async fn page_increment_req(&mut self) -> Result<Value, Error> {
 		
 		let mut responses = Vec::new();
+		let mut requests_count = 0;
 
 		// Kepp calling API until it contains less records than the page_size parameter
 		loop {
+
+			requests_count += 1;
 
 			// Add the pagination parameters to the query parameters
 			self.add_pagination_params();
@@ -484,14 +527,11 @@ impl SourceApi {
 			// Add response data to data from other responses
 			responses.append(&mut iter_resp);
 
-			// Remove the pagination parameters from the query parameters
-			self.remove_pagination_params();
-
 			// increment the page number
 			self.pagination_page_number += 1;
 
 			// Decide if finished making pagfinated requests
-			if record_count < self.pagination_page_size || record_count >= self.max_pagination_requests {
+			if record_count < self.pagination_page_size || requests_count >= self.max_pagination_requests {
 				break
 			}
 
@@ -504,18 +544,58 @@ impl SourceApi {
 	/// Add the pagination parameters to the query parameters
 	fn add_pagination_params(&mut self) {
 		
+		self.add_query_param(
+			self.pagination_page_size_key.clone(), 
+			self.pagination_page_size.to_string()
+		);
+
 		match self.pagination {
 			PaginationOptions::None => (),
 			PaginationOptions::PageIncrement => {
-				self.query.push((self.pagination_page_token_key.clone(), self.pagination_page_number.to_string()));
-				self.query.push((self.pagination_page_size_key.clone(), self.pagination_page_size.to_string()));
+				
+				self.add_query_param(
+					self.pagination_page_token_key.clone(), 
+					self.pagination_page_number.to_string()
+				);
+
 			},
 			PaginationOptions::OffsetIncrement => {
-				self.query.push((self.pagination_page_token_key.clone(), self.pagination_offset.to_string()));
-				self.query.push((self.pagination_page_size_key.clone(), self.pagination_page_size.to_string()));	
+				
+				self.add_query_param(
+					self.pagination_page_token_key.clone(), 
+					self.pagination_offset.to_string()
+				);
+
 			},
-			_ => (),
+			PaginationOptions::Cursor => {
+
+				// add or replace the cursor in the query string
+				match &self.pagination_cursor {
+					Some(cursor) => {
+
+						self.add_query_param(
+							self.pagination_page_token_key.clone(), 
+							cursor.clone()
+						);
+						
+					},
+					None => ()
+				}
+
+			},
 		}
+	}
+
+	// Add or replace a query parameter
+	fn add_query_param(&mut self, param_key: String, param_value: String) {
+
+		match self.query.binary_search_by_key(&param_key, |(a, _b)| a.to_string()) {
+			Ok(index) => {
+				self.query[index] = (param_key.clone(), param_value);
+			},
+			Err(_) => self.query.push((param_key.clone(), param_value))
+		};
+
 	}
 
 	/// Make sure the json value representation of an API response is iterable.
@@ -529,12 +609,6 @@ impl SourceApi {
 
 	}
 
-	/// Remove the pagination parameters from the query parameters
-	fn remove_pagination_params(&mut self) {
-		let _ = self.query.pop();
-		let _ = self.query.pop();
-	}
-
 	/// Perform a series of paginated API requests following the page offset approach.
 	/// This involves adding the number of records received (the offset) to the request 
 	/// query and calling the API on a loop until the response contains less than the 
@@ -542,9 +616,12 @@ impl SourceApi {
 	async fn page_offset_req(&mut self) -> Result<Value, Error> {
 		
 		let mut responses = Vec::new();
+		let mut requests_count = 0;
 
 		// Kepp calling API until it contains less records than the page_size parameter
 		loop {
+
+			requests_count += 1;
 
 			// Add the pagination parameters to the query parameters
 			self.add_pagination_params();
@@ -558,14 +635,11 @@ impl SourceApi {
 			// Add response data to data from other responses
 			responses.append(&mut iter_resp);
 
-			// Remove the pagination parameters from the query parameters
-			self.remove_pagination_params();
-
 			// increment the page number
 			self.pagination_offset += self.pagination_page_size;
 
-			// Decide if finished making pagfinated requests
-			if record_count < self.pagination_page_size || record_count >= self.max_pagination_requests {
+			// Decide if finished making paginated requests
+			if record_count < self.pagination_page_size || requests_count >= self.max_pagination_requests {
 				break
 			}
 
@@ -573,6 +647,136 @@ impl SourceApi {
 
 		Ok(serde_json::Value::Array(responses))
 			
+	}
+
+	/// Perform a series of paginated API requests following the cursor approach.
+	/// This involves finding a field in the last response (defined via 
+	/// `pagination_cursor_field`) and inserting it into the query parameters of the
+	/// next request (use `page_token_key` as the parameter key). Keep making requests
+	/// until no cursor field is returned or the records returned are less than the 
+	/// `pagination_page_size`.
+	async fn cursor_req(&mut self) -> Result<Value, Error> {
+		
+		let mut responses = Vec::new();
+		let mut requests_count = 0;
+
+		// Kepp calling API until it contains less records than the page_size parameter
+		loop {
+
+			requests_count += 1;
+
+			// Add the pagination parameters to the query parameters
+			match self.pagination_cursor_location {
+				CursorLocation::Header => self.add_pagination_params(),
+				CursorLocation::Body => self.add_body_params(),
+			};
+
+			// Make the request and parse the resonse
+			let resp = self.single_request().await?;
+
+			// Get the cursor for the next request
+			self.pagination_cursor = self.get_cursor_value(&resp, 0);
+
+			// Make sure the json value is iterable
+			let (_record_count, mut iter_resp) = self.resp_to_iter(resp);
+
+			// Add response data to data from other responses
+			responses.append(&mut iter_resp);
+
+			// Decide if finished making paginated requests (if a cursor can't be found or
+			// maximum requests count is reached).
+			if self.pagination_cursor == None || requests_count >= self.max_pagination_requests {
+				break
+			}
+
+		}
+
+		Ok(serde_json::Value::Array(responses))
+
+	}
+
+	/// Add cursor to the body of the request
+	fn add_body_params(&mut self) {
+
+		// add or replace the cursor in the query string
+		match &self.pagination_cursor {
+			Some(cursor) => {
+
+				match &mut self.body {
+					Some(body) => match body {
+						Value::Object(body_obj) => {
+							let _ = body_obj.insert(self.pagination_page_token_key.clone(), json!(cursor));
+							()
+						},
+						_ => ()
+					},
+					None => {
+						self.body = Some(json!({self.pagination_page_token_key.clone(): cursor}))
+					}
+				}
+				
+			},
+			None => ()
+		}
+
+	}
+
+	/// Try to extract the cursor that will be used to get the next page of results.
+	/// Return None if a cursor can't be found.
+	fn get_cursor_value(&self, resp: &Value, mut index: usize) -> Option<String> {
+
+		let cursor = match &self.pagination_cursor_field {
+			
+			Some(fields) => match resp {
+				
+				Value::Object(resp_obj) => {
+					
+					match resp_obj.get(&fields[index]) {
+						
+						Some(filtered_obj) => {
+							
+							index += 1;
+
+							if fields.len() == index {
+								Some(filtered_obj.to_string())
+							}
+							else {
+								self.get_cursor_value(filtered_obj, index)
+							}
+
+						},
+						None => None
+					}
+
+				},
+
+				Value::Array(resp_arr) => {
+					
+					match self.pagination_cursor_record {
+						PaginationCursorRecord::First => self.get_cursor_value(&resp_arr[0], 0),
+						PaginationCursorRecord::Last => match &resp_arr.last() {
+							Some(last_resp_item) => self.get_cursor_value(&last_resp_item, 0),
+							None => None
+						},
+					}
+				},
+
+				_ => None
+
+			},
+
+			None => None
+
+		};
+
+		match cursor {
+			Some(cursor) => Some(cursor),
+			None => {
+				info!(target: &self.table_name, "Could not find the cursor '{:?}' in '{:?}' so stopping pagination.", self.pagination_cursor_field, resp);
+				None
+			}
+		}
+
 	}
 
 }
