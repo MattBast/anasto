@@ -195,7 +195,7 @@ pub enum PaginationOptions {
 }
 
 /// This enum defines which record of a response the pagination cursor can be foind in
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default, Eq, PartialEq)]
 #[serde(rename_all="snake_case")]
 pub enum PaginationCursorRecord {
    
@@ -210,7 +210,7 @@ pub enum PaginationCursorRecord {
 
 
 /// This enum defines where the pagination cursor field can be found
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default, Eq, PartialEq)]
 #[serde(rename_all="snake_case")]
 pub enum CursorLocation {
    
@@ -825,6 +825,12 @@ mod tests {
         assert_eq!(table.pagination_page_number, 0);
         assert_eq!(table.pagination_page_size_key, "page_size");
         assert_eq!(table.pagination_page_size, 5);
+        assert_eq!(table.max_pagination_requests, 100);
+        assert_eq!(table.pagination_offset, 0);
+        assert_eq!(table.pagination_cursor_field, None);
+		assert_eq!(table.pagination_cursor_record, PaginationCursorRecord::Last);
+		assert_eq!(table.pagination_cursor, None);
+		assert_eq!(table.pagination_cursor_location, CursorLocation::Body);
 
     }
 
@@ -849,6 +855,12 @@ mod tests {
             pagination_page_number = 1
             pagination_page_size_key = "size_of_page"
             pagination_page_size = 10
+            max_pagination_requests = 11
+            pagination_offset = 1
+            pagination_cursor_field = ["cursor"]
+            pagination_cursor_record = "first"
+            pagination_cursor = "1"
+            pagination_cursor_location = "header"
         "#);
 
         let table: SourceApi = toml::from_str(&content).unwrap();
@@ -869,6 +881,12 @@ mod tests {
         assert_eq!(table.pagination_page_number, 1);
         assert_eq!(table.pagination_page_size_key, "size_of_page");
         assert_eq!(table.pagination_page_size, 10);
+        assert_eq!(table.max_pagination_requests, 11);
+        assert_eq!(table.pagination_offset, 1);
+        assert_eq!(table.pagination_cursor_field, Some(vec!["cursor".to_string()]));
+		assert_eq!(table.pagination_cursor_record, PaginationCursorRecord::First);
+		assert_eq!(table.pagination_cursor, Some("1".to_string()));
+		assert_eq!(table.pagination_cursor_location, CursorLocation::Header);
 
         let dt: NaiveDateTime = NaiveDate::from_ymd_opt(2023, 8, 21).unwrap().and_hms_opt(0, 55, 0).unwrap();
         let datetime_utc = Utc.from_utc_datetime(&dt);
