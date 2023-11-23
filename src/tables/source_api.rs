@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 use std::io::{ Error, ErrorKind };
-use log::{ info, warn };
+use log::info;
 use serde_derive::{ Serialize, Deserialize };
 use chrono::{ DateTime, offset::Utc };
 use std::time::Duration;
@@ -278,7 +278,7 @@ impl SourceApi {
 	}
 
 	/// Make one request to the API and return the response as JSON
-	async fn single_request(&self) -> Result<Value, Error> {
+	async fn single_request(&mut self) -> Result<Value, Error> {
 
 		// define the request
 		let req = self.build_request();
@@ -288,7 +288,18 @@ impl SourceApi {
 
 		// handle the response
 		let checked_resp = self.check_response(resp)?;
-		let json_resp = self.parse_response(checked_resp).await?;
+		let mut json_resp = self.parse_response(checked_resp).await?;
+
+		// Get the cursor for the next request if using the cursor approach to pagination
+		if let PaginationOptions::Cursor = self.pagination {
+			self.pagination_cursor = self.get_cursor_value(&json_resp, 0);
+		}
+
+		// Select nested data from the response.
+		json_resp = match self.filter_result(json_resp.clone(), 0) {
+			Ok(filtered_json_resp) => filtered_json_resp,
+			Err(_e) => json_resp
+		};
 
 		Ok(json_resp)
 
@@ -415,16 +426,7 @@ impl SourceApi {
 	}
 
 	/// Parse the API json response body into an Arrow RecordBatch type
-	fn json_to_record_batch(&mut self, mut json: Value) -> RecordBatch {
-
-		// Select nested data from the response.
-		json = match self.filter_result(json.clone(), 0) {
-			Ok(filtered_json) => filtered_json,
-			Err(e) => {
-				warn!(target: &self.table_name, "Got error '{:?}' while selecting field from result. Ignoring field select.", e);
-				json
-			}
-		};
+	fn json_to_record_batch(&mut self, json: Value) -> RecordBatch {
 		
 		// Get the schema for the json value
 		let schema = match &self.schema {
@@ -519,13 +521,7 @@ impl SourceApi {
 			self.add_pagination_params();
 
 			// Make the request and parse the resonse
-			let mut resp = self.single_request().await?;
-
-			// Select nested data from the response.
-			resp = match self.filter_result(resp.clone(), 0) {
-				Ok(filtered_resp) => filtered_resp,
-				Err(_e) => resp
-			};
+			let resp = self.single_request().await?;
 
 			// Make sure the json value is iterable
 			let (record_count, mut iter_resp) = self.resp_to_iter(resp);
@@ -633,13 +629,7 @@ impl SourceApi {
 			self.add_pagination_params();
 
 			// Make the request and parse the resonse
-			let mut resp = self.single_request().await?;
-
-			// Select nested data from the response.
-			resp = match self.filter_result(resp.clone(), 0) {
-				Ok(filtered_resp) => filtered_resp,
-				Err(_e) => resp
-			};
+			let resp = self.single_request().await?;
 
 			// Make sure the json value is iterable
 			let (record_count, mut iter_resp) = self.resp_to_iter(resp);
@@ -684,16 +674,7 @@ impl SourceApi {
 			};
 
 			// Make the request and parse the resonse
-			let mut resp = self.single_request().await?;
-
-			// Get the cursor for the next request
-			self.pagination_cursor = self.get_cursor_value(&resp, 0);
-
-			// Select nested data from the response.
-			resp = match self.filter_result(resp.clone(), 0) {
-				Ok(filtered_resp) => filtered_resp,
-				Err(_e) => resp
-			};
+			let resp = self.single_request().await?;
 
 			// Make sure the json value is iterable
 			let (_record_count, mut iter_resp) = self.resp_to_iter(resp);
