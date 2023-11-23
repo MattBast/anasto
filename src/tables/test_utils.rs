@@ -252,6 +252,68 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
 
     });
 
+    // Endpoint for second page of cursor pagination
+    let _mock = server.mock(|when, then| {
+
+        let _ = when
+            .path("/paged_cursor_user")
+            .method(method)
+            .query_param("cursor_key", "2");
+            
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "results": [
+                    {"id": 600, "name": {"first": "sixty"}},
+                    {"id": 700, "name": {"first": "seventy"}}
+                ]
+            }));
+
+    });
+
+    // Endpoint for second page of cursor pagination
+    let _mock = server.mock(|when, then| {
+
+        let _ = when
+            .path("/paged_cursor_user")
+            .method(method)
+            .query_param("cursor_key", "1");
+            
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "next_cursor": "2", 
+                "results": [
+                    {"id": 400, "name": {"first": "fourty"}},
+                    {"id": 500, "name": {"first": "fifty"}}
+                ]
+            }));
+
+    });
+
+    // Endpoint for first page of cursor pagination
+    let _mock = server.mock(|when, then| {
+        
+        let _ = when
+            .path("/paged_cursor_user")
+            .method(method);
+            
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(json!({
+                "next_cursor": "1", 
+                "results": [
+                    {"id": 100, "name": {"first": "ten"}},
+                    {"id": 200, "name": {"first": "twenty"}},
+                    {"id": 300, "name": {"first": "thirty"}}
+                ]
+            }));
+
+    });
+
     server
 
 }
@@ -366,6 +428,29 @@ pub fn paginated_offset_resp_batch() -> RecordBatch {
         (
             Arc::new(Field::new("id", DataType::Int64, true)),
             Arc::new(Int64Array::from(vec![10,20,30,40,50,60,70])) as ArrayRef,
+        ),
+        (
+            Arc::new(Field::new("name", DataType::Struct(Fields::from(vec![
+                Field::new("first", DataType::Utf8, true),
+            ])), true)),
+            Arc::new(StructArray::from(vec![
+                (
+                    Arc::new(Field::new("first", DataType::Utf8, true)),
+                    Arc::new(StringArray::from(vec!["ten","twenty","thirty","fourty","fifty","sixty","seventy"])) as ArrayRef,
+                ),
+            ])) as ArrayRef,
+        ),
+    ]).into()
+
+}
+
+/// A test record batch for the paginated requests
+pub fn paginated_cursor_resp_batch() -> RecordBatch {
+
+    StructArray::from(vec![
+        (
+            Arc::new(Field::new("id", DataType::Int64, true)),
+            Arc::new(Int64Array::from(vec![100,200,300,400,500,600,700])) as ArrayRef,
         ),
         (
             Arc::new(Field::new("name", DataType::Struct(Fields::from(vec![

@@ -119,7 +119,7 @@ pub struct SourceApi {
     #[serde(default="default_page_size_key")]
     pub pagination_page_size_key: String,
 
-    /// Optional field. States how many records will be returned per page during. 
+    /// Optional field. States how many records will be returned per page during 
     /// pagination. Defaults to 5.
     #[serde(default="default_page_size")]
     pub pagination_page_size: usize,
@@ -148,7 +148,7 @@ pub struct SourceApi {
 	#[serde(default)]
 	pub pagination_cursor: Option<String>,
 
-	/// Optional field. State where the pagination cursor field can be found.
+	/// Optional field. State where the pagination cursor should be placed in the request.
 	#[serde(default)]
 	pub pagination_cursor_location: CursorLocation,
 
@@ -519,7 +519,13 @@ impl SourceApi {
 			self.add_pagination_params();
 
 			// Make the request and parse the resonse
-			let resp = self.single_request().await?;
+			let mut resp = self.single_request().await?;
+
+			// Select nested data from the response.
+			resp = match self.filter_result(resp.clone(), 0) {
+				Ok(filtered_resp) => filtered_resp,
+				Err(_e) => resp
+			};
 
 			// Make sure the json value is iterable
 			let (record_count, mut iter_resp) = self.resp_to_iter(resp);
@@ -627,7 +633,13 @@ impl SourceApi {
 			self.add_pagination_params();
 
 			// Make the request and parse the resonse
-			let resp = self.single_request().await?;
+			let mut resp = self.single_request().await?;
+
+			// Select nested data from the response.
+			resp = match self.filter_result(resp.clone(), 0) {
+				Ok(filtered_resp) => filtered_resp,
+				Err(_e) => resp
+			};
 
 			// Make sure the json value is iterable
 			let (record_count, mut iter_resp) = self.resp_to_iter(resp);
@@ -672,10 +684,16 @@ impl SourceApi {
 			};
 
 			// Make the request and parse the resonse
-			let resp = self.single_request().await?;
+			let mut resp = self.single_request().await?;
 
 			// Get the cursor for the next request
 			self.pagination_cursor = self.get_cursor_value(&resp, 0);
+
+			// Select nested data from the response.
+			resp = match self.filter_result(resp.clone(), 0) {
+				Ok(filtered_resp) => filtered_resp,
+				Err(_e) => resp
+			};
 
 			// Make sure the json value is iterable
 			let (_record_count, mut iter_resp) = self.resp_to_iter(resp);
@@ -685,7 +703,7 @@ impl SourceApi {
 
 			// Decide if finished making paginated requests (if a cursor can't be found or
 			// maximum requests count is reached).
-			if self.pagination_cursor == None || requests_count >= self.max_pagination_requests {
+			if self.pagination_cursor.is_none() || requests_count >= self.max_pagination_requests {
 				break
 			}
 
@@ -703,12 +721,8 @@ impl SourceApi {
 			Some(cursor) => {
 
 				match &mut self.body {
-					Some(body) => match body {
-						Value::Object(body_obj) => {
-							let _ = body_obj.insert(self.pagination_page_token_key.clone(), json!(cursor));
-							()
-						},
-						_ => ()
+					Some(body) => if let Value::Object(body_obj) = body {
+						let _ = body_obj.insert(self.pagination_page_token_key.clone(), json!(cursor));
 					},
 					None => {
 						self.body = Some(json!({self.pagination_page_token_key.clone(): cursor}))
@@ -738,7 +752,7 @@ impl SourceApi {
 							index += 1;
 
 							if fields.len() == index {
-								Some(filtered_obj.to_string())
+								Some(filtered_obj.as_str()?.to_string())
 							}
 							else {
 								self.get_cursor_value(filtered_obj, index)
@@ -755,7 +769,7 @@ impl SourceApi {
 					match self.pagination_cursor_record {
 						PaginationCursorRecord::First => self.get_cursor_value(&resp_arr[0], 0),
 						PaginationCursorRecord::Last => match &resp_arr.last() {
-							Some(last_resp_item) => self.get_cursor_value(&last_resp_item, 0),
+							Some(last_resp_item) => self.get_cursor_value(last_resp_item, 0),
 							None => None
 						},
 					}
@@ -794,7 +808,8 @@ mod tests {
 		reduced_paginated_resp_batch,
 		paginated_offset_resp_batch,
 		many_nested_api_resp_batch,
-		paginated_offset_resp_batch_filtered
+		paginated_offset_resp_batch_filtered,
+		paginated_cursor_resp_batch
 	};
 
 	#[test]
@@ -1443,6 +1458,35 @@ mod tests {
         let df_data = df.collect().await.unwrap();
 
         let expected_batch = paginated_offset_resp_batch_filtered();
+
+        assert!(read_success);
+        assert!(df_data.contains(&expected_batch));
+        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+
+    }
+
+    #[tokio::test]
+    async fn can_make_cursor_paginated_requests() {
+    
+    	let mock_api = mock_api("GET", 200);
+
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		select_field = ["results"]
+    		pagination = "cursor"
+            pagination_page_token_key = "cursor_key"
+            pagination_cursor_field = ["next_cursor"]
+            pagination_cursor_location = "header"
+    	"#, mock_api.url("/paged_cursor_user"));
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let (read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        let expected_batch = paginated_cursor_resp_batch();
 
         assert!(read_success);
         assert!(df_data.contains(&expected_batch));
