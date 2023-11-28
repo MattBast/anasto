@@ -82,6 +82,14 @@ pub struct SourceApi {
     #[serde(default="start_of_time_timestamp")]
     pub bookmark: DateTime<Utc>,
 
+    /// Optional field. State the name of the key of the bookmark in the API request.
+    #[serde(default="default_bookmark_key")]
+    pub bookmark_key: String,
+
+    /// Optional field. State where the bookmark cursor should be placed in the request.
+	#[serde(default)]
+	pub bookmark_location: CursorLocation,
+
     /// Optional field. Determines how frequently new data will be written to the destination. Provided in milliseconds.
     #[serde(default="ten_secs_as_millis")]
     pub poll_interval: u64,
@@ -153,6 +161,12 @@ pub struct SourceApi {
 	pub pagination_cursor_location: CursorLocation,
 
 }
+
+/// Returns the string "bookmark"
+pub fn default_bookmark_key() -> String {
+	String::from("bookmark")
+}
+
 
 /// Returns the string "page"
 pub fn default_page_number_key() -> String {
@@ -306,9 +320,12 @@ impl SourceApi {
 	}
 
 	/// Generate an API request from the parameters in the table config
-	fn build_request(&self) -> RequestBuilder {
+	fn build_request(&mut self) -> RequestBuilder {
 
 		let mut req = self.pick_method();
+		if !self.one_request {
+			self.add_bookmark();
+		}
 		req = self.add_query(req);
 		req = self.add_headers(req);
 		req = self.add_basic_auth(req);
@@ -388,6 +405,27 @@ impl SourceApi {
 		match &self.timeout {
 			Some(duration) => req.timeout(*duration),
 			None => req
+		}
+
+	}
+
+	/// Adds the bookmark field to the body or header before they are added
+	/// to the request.
+	fn add_bookmark(&mut self) {
+
+		match self.bookmark_location {
+			CursorLocation::Body => {
+				self.add_body_params(
+					self.bookmark_key.clone(), 
+					self.bookmark.to_string()
+				);
+			},
+			CursorLocation::Header => {
+				self.add_query_param(
+					self.bookmark_key.clone(), 
+					self.bookmark.to_string()
+				);
+			},
 		}
 
 	}
@@ -670,7 +708,15 @@ impl SourceApi {
 			// Add the pagination parameters to the query parameters
 			match self.pagination_cursor_location {
 				CursorLocation::Header => self.add_pagination_params(),
-				CursorLocation::Body => self.add_body_params(),
+				CursorLocation::Body => {
+					match &self.pagination_cursor {
+						Some(cursor) => self.add_body_params(
+							self.pagination_page_token_key.clone(), 
+							cursor.to_string()
+						),
+						None => ()
+					}
+				},
 			};
 
 			// Make the request and parse the resonse
@@ -695,24 +741,17 @@ impl SourceApi {
 	}
 
 	/// Add cursor to the body of the request
-	fn add_body_params(&mut self) {
+	fn add_body_params(&mut self, key: String, cursor: String) {
 
-		// add or replace the cursor in the query string
-		match &self.pagination_cursor {
-			Some(cursor) => {
-
-				match &mut self.body {
-					Some(body) => if let Value::Object(body_obj) = body {
-						let _ = body_obj.insert(self.pagination_page_token_key.clone(), json!(cursor));
-					},
-					None => {
-						self.body = Some(json!({self.pagination_page_token_key.clone(): cursor}))
-					}
-				}
-				
+		match &mut self.body {
+			Some(body) => if let Value::Object(body_obj) = body {
+				let _ = body_obj.insert(key, json!(cursor));
+				self.body = Some(json!(body_obj));
 			},
-			None => ()
-		}
+			None => {
+				self.body = Some(json!({key: cursor}));
+			}
+		};
 
 	}
 
@@ -1493,6 +1532,7 @@ mod tests {
     	// define table config using mock servers url
     	let config = format!(r#"
     		endpoint_url = "{}"
+    		one_request = true
     		pagination = "cursor"
     		pagination_page_size = 3
             pagination_page_token_key = "record_id"
@@ -1515,4 +1555,21 @@ mod tests {
 
     }
 
+    // New test ideas
+
+    // ***************************************************************************
+    // Two polling requests with bookmark included
+    // ***************************************************************************
+
+    // ***************************************************************************
+    // Can edit bookmark datetime format
+    // ***************************************************************************
+
+    // ***************************************************************************
+    // Can include an end time and start time bookmark
+    // ***************************************************************************
+
+    // ***************************************************************************
+    // Can include an end bookmark that stops the source table polling for new data
+    // ***************************************************************************
 }
