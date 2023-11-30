@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use serde::de::Error as SerdeError;
 use std::io::{Error, ErrorKind};
 use serde::*;
-use chrono::{ DateTime, offset::Utc };
+use chrono::{ DateTime, TimeZone, offset::Utc };
 use rnglib::{RNG, Language};
 use convert_case::{Case, Casing};
 use reqwest::{ 
@@ -87,7 +87,7 @@ pub fn path_dir_check<'de, D: Deserializer<'de>>(d: D) -> Result<PathBuf, D::Err
 
 /// Return the timestamp “1970-01-01 00:00:00 UTC”
 pub fn start_of_time_timestamp() -> DateTime<Utc> {
-    chrono::DateTime::<Utc>::MIN_UTC
+    chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap()
 }
 
 /// Returns 10 seconds as 10,000 milliseconds

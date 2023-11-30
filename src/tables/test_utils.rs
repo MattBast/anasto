@@ -350,6 +350,41 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
 
     });
 
+    // Endpoint for first page of bookmark request
+    let _mock = server.mock(|when, then| {
+
+        let _ = when
+            .path("/bookmark_user")
+            .method(method)
+            .json_body(json!({ "updated_after": "1970-01-01 00:00:00 UTC" }));
+            
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(json!([
+                {"id": 1, "name": "The Picture of Dorian Gray"},
+                {"id": 2, "name": "The Lies of Locke Lamora"}
+            ]));
+
+    });
+
+    // Endpoint for second page of bookmark request
+    let _mock = server.mock(|when, then| {
+
+        let _ = when
+            .path("/bookmark_user")
+            .method(method)
+            .body_contains("updated_after");
+            
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(json!([
+                {"id": 3, "name": "Dune"}
+            ]));
+
+    });
+
     server
 
 }
@@ -535,5 +570,33 @@ pub fn paginated_offset_resp_batch_filtered() -> RecordBatch {
             Arc::new(StringArray::from(vec!["ten","twenty","thirty","fourty","fifty","sixty","seventy"])) as ArrayRef,
         ),
     ]).into()
+
+}
+
+/// A test record batch for the paginated requests
+pub fn bookmark_resp_batch() -> Vec<RecordBatch> {
+
+    [
+        StructArray::from(vec![
+            (
+                Arc::new(Field::new("id", DataType::Int64, true)),
+                Arc::new(Int64Array::from(vec![1,2])) as ArrayRef,
+            ),
+            (
+                Arc::new(Field::new("name", DataType::Utf8, true)),
+                Arc::new(StringArray::from(vec!["The Picture of Dorian Gray","The Lies of Locke Lamora"])) as ArrayRef,
+            ),
+        ]).into(),
+        StructArray::from(vec![
+            (
+                Arc::new(Field::new("id", DataType::Int64, true)),
+                Arc::new(Int64Array::from(vec![3])) as ArrayRef,
+            ),
+            (
+                Arc::new(Field::new("name", DataType::Utf8, true)),
+                Arc::new(StringArray::from(vec!["Dune"])) as ArrayRef,
+            ),
+        ]).into()
+    ].to_vec()
 
 }

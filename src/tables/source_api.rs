@@ -838,7 +838,8 @@ mod tests {
 		many_nested_api_resp_batch,
 		paginated_offset_resp_batch_filtered,
 		paginated_cursor_resp_batch,
-		paginated_cursor_body_resp_batch
+		paginated_cursor_body_resp_batch,
+		bookmark_resp_batch
 	};
 
 	#[test]
@@ -859,7 +860,7 @@ mod tests {
         assert_eq!(table.query, Vec::new());
         assert_eq!(table.basic_auth, None);
         assert_eq!(table.headers, HeaderMap::new());
-        assert_eq!(table.bookmark, chrono::DateTime::<Utc>::MIN_UTC);
+        assert_eq!(table.bookmark, chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
         assert_eq!(table.poll_interval, 10_000);
         assert!(matches!(table.on_fail, FailAction::Stop));
         assert!(matches!(table.one_request, false));
@@ -1555,11 +1556,35 @@ mod tests {
 
     }
 
-    // New test ideas
+    #[tokio::test]
+    async fn can_make_request_with_incrementing_bookmark() {
+    
+    	let mock_api = mock_api("GET", 200);
 
-    // ***************************************************************************
-    // Two polling requests with bookmark included
-    // ***************************************************************************
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		one_request = false
+    		bookmark_key = "updated_after"
+    		bookmark_location = "body"
+    	"#, mock_api.url("/bookmark_user"));
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let (_read_success, df_one) = table.read_new_data().await.unwrap();
+        let (_read_success, df_two) = table.read_new_data().await.unwrap();
+        
+        let df = df_one.union(df_two).unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        let expected_data = bookmark_resp_batch();
+
+        assert_eq!(df_data, expected_data);
+
+    }
+
+    // New test ideas
 
     // ***************************************************************************
     // Can edit bookmark datetime format
