@@ -350,6 +350,24 @@ pub fn mock_api(method: &str, return_status: u16) -> httpmock::MockServer {
 
     });
 
+    // Endpoint for formatted bookmark request
+    let _mock = server.mock(|when, then| {
+
+        let _ = when
+            .path("/bookmark_user")
+            .method(method)
+            .json_body(json!({ "updated_after": "1970-01-01T00:00:00Z" }));
+            
+        let _ = then
+            .status(return_status)
+            .header("content-type", "application/json")
+            .json_body(json!([
+                {"id": 1, "name": "The Very Hungry Caterpillar"},
+                {"id": 2, "name": "Sleeping Beauty"}
+            ]));
+
+    });
+
     // Endpoint for first page of bookmark request
     let _mock = server.mock(|when, then| {
 
@@ -598,5 +616,21 @@ pub fn bookmark_resp_batch() -> Vec<RecordBatch> {
             ),
         ]).into()
     ].to_vec()
+
+}
+
+/// A test record batch for the paginated requests
+pub fn formatted_bookmark_resp_batch() -> RecordBatch {
+
+    StructArray::from(vec![
+        (
+            Arc::new(Field::new("id", DataType::Int64, true)),
+            Arc::new(Int64Array::from(vec![1,2])) as ArrayRef,
+        ),
+        (
+            Arc::new(Field::new("name", DataType::Utf8, true)),
+            Arc::new(StringArray::from(vec!["The Very Hungry Caterpillar","Sleeping Beauty"])) as ArrayRef,
+        ),
+    ]).into()
 
 }

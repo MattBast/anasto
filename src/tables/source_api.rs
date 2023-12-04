@@ -90,7 +90,13 @@ pub struct SourceApi {
 	#[serde(default)]
 	pub bookmark_location: CursorLocation,
 
-    /// Optional field. Determines how frequently new data will be written to the destination. Provided in milliseconds.
+	/// Optional field. State what datetime format the bookmark should be in when it is
+	/// added to an API request.
+	#[serde(default="default_bookmark_format")]
+	pub bookmark_format: String,
+
+    /// Optional field. Determines how frequently new data will be written to the 
+    /// destination. Provided in milliseconds.
     #[serde(default="ten_secs_as_millis")]
     pub poll_interval: u64,
 
@@ -186,6 +192,11 @@ pub fn default_page_size() -> usize {
 /// Returns the integer 100
 pub fn default_page_requests() -> usize {
 	100
+}
+
+/// Returns the string "%Y-%m-%d %H:%M:%S UTC"
+pub fn default_bookmark_format() -> String {
+	String::from("%Y-%m-%d %H:%M:%S UTC")
 }
 
 /// This enum defines what pagination strategy (if any) to perform
@@ -417,17 +428,25 @@ impl SourceApi {
 			CursorLocation::Body => {
 				self.add_body_params(
 					self.bookmark_key.clone(), 
-					self.bookmark.to_string()
+					self.get_bookmark_string()
 				);
 			},
 			CursorLocation::Header => {
 				self.add_query_param(
 					self.bookmark_key.clone(), 
-					self.bookmark.to_string()
+					self.get_bookmark_string()
 				);
 			},
 		}
 
+	}
+
+	/// Format the datetome type bookmark as a string according to the 
+	/// format specified by the `bookmark_format` parameter
+	fn get_bookmark_string(&self) -> String {
+		
+		format!("{}", self.bookmark.format(&self.bookmark_format))
+		
 	}
 
 	// Check that the request was successful. Return an error if not.
@@ -839,7 +858,8 @@ mod tests {
 		paginated_offset_resp_batch_filtered,
 		paginated_cursor_resp_batch,
 		paginated_cursor_body_resp_batch,
-		bookmark_resp_batch
+		bookmark_resp_batch,
+		formatted_bookmark_resp_batch
 	};
 
 	#[test]
@@ -1584,11 +1604,33 @@ mod tests {
 
     }
 
-    // New test ideas
+    #[tokio::test]
+    async fn can_make_request_with_formatted_bookmark() {
+    
+    	let mock_api = mock_api("GET", 200);
 
-    // ***************************************************************************
-    // Can edit bookmark datetime format
-    // ***************************************************************************
+    	// define table config using mock servers url
+    	let config = format!(r#"
+    		endpoint_url = "{}"
+    		one_request = false
+    		bookmark_key = "updated_after"
+    		bookmark_location = "body"
+    		bookmark_format = "%Y-%m-%dT%H:%M:%SZ"
+    	"#, mock_api.url("/bookmark_user"));
+
+        // Create the table and read in new data from the mock api.
+        // Parse the table as a vec of record batches.
+        let mut table: SourceApi = toml::from_str(&config).unwrap();
+        let (_read_success, df) = table.read_new_data().await.unwrap();
+        let df_data = df.collect().await.unwrap();
+
+        let expected_data = formatted_bookmark_resp_batch();
+
+        assert_eq!(df_data, [expected_data].to_vec());
+
+    }
+
+    // New test ideas
 
     // ***************************************************************************
     // Can include an end time and start time bookmark

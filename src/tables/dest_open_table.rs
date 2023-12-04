@@ -127,7 +127,7 @@ impl DestOpenTable {
 	            self.new_delta_table(columns).await?
 	        },
 	        
-	        Err(err) => Err(err).unwrap(),
+	        Err(err) => return Err(err),
 	    };
 
 	    // Setup compression settings for the tables files
