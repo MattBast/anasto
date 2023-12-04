@@ -173,7 +173,7 @@ mod tests {
         assert_eq!(table.table_name, "csv_table");
         assert_eq!(table.dirpath, PathBuf::from("./tests/data/csv_table/").canonicalize().unwrap());
         assert!(matches!(table.filetype, LakeFileType::Csv));
-        assert_eq!(table.bookmark, chrono::DateTime::<Utc>::MIN_UTC);
+        assert_eq!(table.bookmark, chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
         assert_eq!(table.poll_interval, 10_000);
         assert!(matches!(table.on_fail, FailAction::Stop));
 
@@ -369,7 +369,7 @@ mod tests {
         assert!(read_success);
         assert!(df_data.contains(&batch_one));
         assert!(df_data.contains(&batch_two));
-        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+        assert!(table.bookmark > chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
 
     }
 

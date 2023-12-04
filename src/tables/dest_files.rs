@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(table.source_table_name, "json_table");
         assert_eq!(table.dirpath, PathBuf::from("./tests/data/avro_table/").canonicalize().unwrap());
         assert!(matches!(table.filetype, LakeFileType::Csv));
-        assert_eq!(table.bookmark, chrono::DateTime::<Utc>::MIN_UTC);
+        assert_eq!(table.bookmark, chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
         assert!(matches!(table.on_fail, FailAction::Stop));
 
     }
@@ -377,7 +377,7 @@ mod tests {
         assert!(src_data.contains(&dest_data[1]));
 
         // make sure the bookmark has progressed
-		assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+		assert!(table.bookmark > chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
 
     }
 
@@ -410,7 +410,7 @@ mod tests {
         assert!(src_data.contains(&dest_data[1]));
 
         // make sure the bookmark has progressed
-		assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+		assert!(table.bookmark > chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
 
     }
 
@@ -443,7 +443,7 @@ mod tests {
         assert!(src_data.contains(&dest_data[1]));
 
         // make sure the bookmark has progressed
-		assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+		assert!(table.bookmark > chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
 
     }
 
@@ -494,7 +494,7 @@ mod tests {
         assert_eq!(dest_values, vec!["hello world", "hey there", "hi"]);
 
         // make sure the bookmark has progressed
-		assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+		assert!(table.bookmark > chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
 
     }
 
@@ -530,7 +530,7 @@ mod tests {
         assert!(dest_data.contains(&src_data_two[0]));
 
         // make sure the bookmark has progressed
-		assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+		assert!(table.bookmark > chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
     }
 
 }

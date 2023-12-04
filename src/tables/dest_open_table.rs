@@ -283,7 +283,7 @@ mod tests {
         assert_eq!(table.source_table_name, "json_table");
         assert_eq!(table.dirpath, PathBuf::from("./tests/data/delta_table/").canonicalize().unwrap());
         assert!(matches!(table.format, OpenTableFormat::DeltaLake));
-        assert_eq!(table.bookmark, chrono::DateTime::<Utc>::MIN_UTC);
+        assert_eq!(table.bookmark, chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
         assert!(matches!(table.on_fail, FailAction::Stop));
 
     }
@@ -496,7 +496,7 @@ mod tests {
         assert_eq!(values, vec!["hello world", "hey there", "hi"]);
 
         // make sure the bookmark has progressed
-		assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+		assert!(table.bookmark > chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
 
     }
 

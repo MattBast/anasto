@@ -7,7 +7,7 @@ use log::{ info, warn };
 use serde_derive::{ Serialize, Deserialize };
 use std::path::PathBuf;
 use std::path::Path;
-use chrono::{ DateTime, offset::Utc };
+use chrono::{ DateTime, TimeZone, offset::Utc };
 use std::time::Duration;
 use crate::tables::{ FailAction, OpenTableFormat };
 use crate::tables::utils::{
@@ -171,7 +171,7 @@ impl SourceOpenTable {
 	/// Return the tables bookmark as a DataFusion Dataframe timestamp
 	fn dataframe_bookmark(&self) -> Expr {
 		
-		let timestamp_seconds: i64 = (self.bookmark - chrono::DateTime::<Utc>::MIN_UTC).num_seconds();
+		let timestamp_seconds: i64 = (self.bookmark - chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap()).num_seconds();
 		Expr::Literal(ScalarValue::TimestampSecond(Some(timestamp_seconds), None))
 
 	}
@@ -236,7 +236,7 @@ mod tests {
         assert_eq!(table.table_name, "delta_table");
         assert_eq!(table.dirpath, PathBuf::from("./tests/data/delta_table/").canonicalize().unwrap());
         assert!(matches!(table.format, OpenTableFormat::DeltaLake));
-        assert_eq!(table.bookmark, chrono::DateTime::<Utc>::MIN_UTC);
+        assert_eq!(table.bookmark, chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
         assert_eq!(table.poll_interval, 10_000);
         assert!(matches!(table.on_fail, FailAction::Stop));
 
@@ -427,7 +427,7 @@ mod tests {
 
         assert!(read_success);
         assert_eq!(df_data[0], batch);
-        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+        assert!(table.bookmark > chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
 
     }
 
