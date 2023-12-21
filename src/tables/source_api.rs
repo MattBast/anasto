@@ -343,10 +343,7 @@ impl SourceApi {
 		req = self.add_body(req);
 		req = self.add_timeout(req);
 
-		info!(target: &self.table_name, r#"
-			Calling api with request: 
-			{:?}
-		"#, req);
+		info!(target: &self.table_name, r#"Calling api with request: {:?}"#, req);
 
 		req
 
@@ -1629,5 +1626,15 @@ mod tests {
         assert_eq!(df_data, [expected_data].to_vec());
 
     }
-    
+
+    // New test ideas
+
+    // ***************************************************************************
+    // Can include an end time and start time bookmark
+    // See historical data calls on this api for an example: https://open-meteo.com/
+    // ***************************************************************************
+
+    // ***************************************************************************
+    // Can include an end bookmark that stops the source table polling for new data
+    // ***************************************************************************
 }
