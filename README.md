@@ -139,8 +139,61 @@ And here's a description of each of the fields:
 | dirpath       | Path           | The directory filepath where all data in this table is stored.                                                                                                                                                                  |
 | filetype      | Enum           | Optional field. The type of file that the tables data is stored in. Available formats are `csv`, `json`, `avro` and `parquet`. Defaults to `csv`.                                                                               |
 | bookmark      | Datetime (UTC) | Optional field. Filter out any files whose created date is earlier than this bookmark. Defaults to "1970-01-01T00:00:00z".                                                                                                      |
-| poll_interval | int64          | Optional field. Determines how frequently new data will be read from the source. Provided in milliseconds. Defaults to 10000.                                                                                             |
+| poll_interval | int          | Optional field. Determines how frequently new data will be read from the source. Provided in milliseconds. Defaults to 10000.                                                                                             |
 | on_fail       | Enum           | Optional field. Decide what to do when new data fails to be read from the source. Available values are `stop` (stops Anasto reading the table) and `skip` (Anasto skips the batch with an error in it). Defaults to `stop`. |
+
+### API (Source Table) 
+A source table that is read from an API. It works by calling a specified API endpoint either once or polled continuously and sending all selected data in the response to be written as a table. A bookmark can be inserted into the request to request only new data. Pagination can also be configured for endpoints that return more data than can be received in a single request.
+
+Here's an example:
+```toml
+[[source_table]]
+type = "api"
+table_name = "weather_source"
+endpoint_url = "https://api.open-meteo.com/v1/forecast"
+query = [
+    ["latitude", "52.52"],
+    ["longitude", "13.41"],
+    ["current", "temperature_2m,wind_speed_10m"],
+    ["hourly", "temperature_2m,relative_humidity_2m,wind_speed_10m"]
+]
+one_request = true
+```
+
+⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+Need to add examples to show off all possible fields.
+⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
+
+And here's a description of each of the fields:
+
+| Field Name                 | Data Type                | Description                                                                                                                            |
+|----------------------------|--------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| table_name                 | String                   | A user defined name for the table. This does not need to correlate with the directory path where the tables files are stored.          |
+| endpoint_url               | String                   | The url of the endpoint to call.                                                                                                       |
+| method                     | Enum                     | The HTTP method to call this endpoint with. Can be one of: get, post, put, patch, delete.                                              |
+| select_field               | Array                    | Select the field in the response where the table data resides. Provide as a vector of strings to select a nested field                 |
+| timeout                    | int                      | How long to wait for a response before cancelling the request (in seconds)                                                             |
+| query                      | Array of tuples          | Adds one or more queries to the url                                                                                                    |
+| basic_auth                 | Tuple of strings.        | Adds a basic (username-password) header to the request                                                                                 |
+| headers                    | Array of tuples          | Adds one or more headers to the request                                                                                                |
+| body                       | Object                   | Adds a json body to the request                                                                                                        |
+| bookmark                   | String                   | Tracks which files have been read using their created timestamp                                                                        |
+| bookmark_key               | String                   | Optional field. State the name of the key of the bookmark in the API request.                                                          |
+| bookmark_location          | String                   | Optional field. State where the bookmark cursor should be placed in the request.                                                       |
+| bookmark_format            | String                   | Optional field. State what datetime format the bookmark should be in when it is added to an API request.                               |
+| poll_interval              | int                      | Optional field. Determines how frequently new data will be written to the destination. Provided in milliseconds.                       |
+| on_fail                    | Enum                     | Optional field. Decide what to do when new data fails to be written to a destination. Can be one of: skip, stop.                       |
+| one_request                | bool                     | Optional field. State if this source should call an API just once (true) or if it should poll the API (false). Defaults to false.      |
+| pagination                 | Enum                     | Optional field. States what pagination approach will be taken. Can be one of: none, page_increment, offset_increment, cursor Defaults to none meaning no pagination will be performed. |
+| pagination_page_token_key  | String                   | Optional field. States the name of the page number or offset parameter that will increment during pagination. Defaults to "page_size". |
+| pagination_page_number     | int                      | Optional field. Keeps track of what page the pagination needs to request. Defaults to 0.                                               |
+| pagination_page_size_key   | String                   | Optional field. States the name of the page size parameter that will increment during pagination. Defaults to "page".                  |
+| pagination_page_size       | int                      | Optional field. States how many records will be returned per page during pagination. Defaults to 5.                                    |
+| max_pagination_requests    | int                      | Optional field. States the maximum number of requests a paginated call can make. Defaults to 100.                                      |
+| pagination_offset          | int                      | Optional field. Keeps track of how many records the pagination requests have received. Defaults to 0.                                  |
+| pagination_cursor_field    | Array of strings         | Optional field. Select the field that will be used to request the next page of results.                                                |
+| pagination_cursor_record   | Enum                     | Optional field. Define which record in a response contains the cursor. Defaults to the last record. Can be one of: first, last         |
+| pagination_cursor_location | Enum           | Optional field. State where the pagination cursor should be placed in the request.  Can be one of: body, header.                                 |
 
 ### Open Table (Source Table) 
 A source table that is read read from a local open table database like [Delta Lake](https://delta.io/). It works by polling the change data feed files and reading a stream of these change events. Note that for now this table only supports the delta lake format. The Iceberg format will be added once the [Apache Iceberg crate](https://github.com/apache/iceberg-rust) matures.
@@ -165,7 +218,7 @@ And here's a description of each of the fields:
 | dirpath       | Path           | The directory filepath where all data in this table is stored.                                                                                                                                                              |
 | format        | Enum           | Optional field. The open table format that the tables data is stored in. The only format available is `delta_lake`. Defaults to `delta_lake`.                                                                               |
 | bookmark      | Datetime (UTC) | Optional field. Filter out any change feed events whose committed date is earlier than this bookmark. Defaults to "1970-01-01T00:00:00z".                                                                                   |
-| poll_interval | int64          | Optional field. Determines how frequently new data will be read from the source. Provided in milliseconds. Defaults to 10000.                                                                                               |
+| poll_interval | int          | Optional field. Determines how frequently new data will be read from the source. Provided in milliseconds. Defaults to 10000.                                                                                               |
 | on_fail       | Enum           | Optional field. Decide what to do when new data fails to be read from the source. Available values are `stop` (stops Anasto reading the table) and `skip` (Anasto skips the batch with an error in it). Defaults to `stop`. |
 
 ### Files (Destination Table) 
