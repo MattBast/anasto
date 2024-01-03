@@ -453,7 +453,15 @@ fn field_from_json(json: &serde_json::Value, field_name: &String) -> Field {
         Value::String(_) => Field::new(field_name, ArrowDataType::Utf8, true),
         Value::Array(arr) => {
             
-            let list_field = field_from_json(&arr[0], field_name);
+            let list_field = if arr.is_empty() {
+                // default the type of the list items to a string if the list 
+                // is empty
+                Field::new(field_name, ArrowDataType::Utf8, true)
+            } else {
+                // or discover the type if there is at least one item
+                field_from_json(&arr[0], field_name)
+            };
+            
             Field::new(field_name, ArrowDataType::List(Arc::new(list_field)), true)
 
         },
@@ -497,5 +505,9 @@ mod tests {
         assert_eq!(schema, control_schema);
 
     }
+
+    // ********************************************************************************
+    // write a test for possibility of an empty array getting passed to `fields_from_json`
+    // ********************************************************************************
 
 }
