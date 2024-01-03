@@ -471,3 +471,31 @@ fn field_from_json(json: &serde_json::Value, field_name: &String) -> Field {
     }
 
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn schema_from_object_including_empty_array() {
+        
+        let json_object = json!({
+            "past_abilities": []
+        });
+        
+        let schema = schema_from_json(
+            &json_object, 
+            &"test_table".to_string()
+        );
+
+        let inner_field = Field::new("past_abilities", ArrowDataType::Utf8, true);
+        let list_field = Field::new("past_abilities", ArrowDataType::List(Arc::new(inner_field)), true);
+
+        let control_schema = Schema::new(vec![list_field]);
+
+        assert_eq!(schema, control_schema);
+
+    }
+
+}

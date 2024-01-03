@@ -1,0 +1,12 @@
+[[source_table]]
+type = "api"
+table_name = "pikachu_source"
+endpoint_url = "https://pokeapi.co/api/v2/pokemon/pikachu"
+one_request = true
+
+[[destination_table]]
+type = "files"
+source_table_name = "pikachu_source"
+dest_table_name = "pikachu_destination"
+dirpath = "./tests/data/pokemon_table/"
+filetype = "json"

@@ -149,20 +149,10 @@ Here's an example:
 ```toml
 [[source_table]]
 type = "api"
-table_name = "weather_source"
-endpoint_url = "https://api.open-meteo.com/v1/forecast"
-query = [
-    ["latitude", "52.52"],
-    ["longitude", "13.41"],
-    ["current", "temperature_2m,wind_speed_10m"],
-    ["hourly", "temperature_2m,relative_humidity_2m,wind_speed_10m"]
-]
+table_name = "pikachu_source"
+endpoint_url = "https://pokeapi.co/api/v2/pokemon/pikachu"
 one_request = true
 ```
-
-⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
-Need to add examples to show off all possible fields.
-⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️
 
 And here's a description of each of the fields:
 
@@ -194,6 +184,21 @@ And here's a description of each of the fields:
 | pagination_cursor_field    | Array of strings         | Optional field. Select the field that will be used to request the next page of results.                                                |
 | pagination_cursor_record   | Enum                     | Optional field. Define which record in a response contains the cursor. Defaults to the last record. Can be one of: first, last         |
 | pagination_cursor_location | Enum           | Optional field. State where the pagination cursor should be placed in the request.  Can be one of: body, header.                                 |
+
+Here's some more examples for how to configure the API source. The first adds query parameters to the request:
+```toml
+[[source_table]]
+type = "api"
+table_name = "weather_source"
+endpoint_url = "https://api.open-meteo.com/v1/forecast"
+query = [
+    ["latitude", "52.52"],
+    ["longitude", "13.41"],
+    ["current", "temperature_2m,wind_speed_10m"],
+    ["hourly", "temperature_2m,relative_humidity_2m,wind_speed_10m"]
+]
+one_request = true
+```
 
 ### Open Table (Source Table) 
 A source table that is read read from a local open table database like [Delta Lake](https://delta.io/). It works by polling the change data feed files and reading a stream of these change events. Note that for now this table only supports the delta lake format. The Iceberg format will be added once the [Apache Iceberg crate](https://github.com/apache/iceberg-rust) matures.
