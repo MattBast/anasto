@@ -24,6 +24,7 @@ use tokio::sync::mpsc::UnboundedSender;
 // crates from the internal tables module
 use crate::tables::source_files::SourceFiles;
 use crate::tables::source_open_table::SourceOpenTable;
+use crate::tables::source_api::SourceApi;
 use crate::tables::FailAction;
 
 /// The variants in this enum represent all the different source tables that Anasto can process.
@@ -36,6 +37,9 @@ pub enum SourceTable {
 
    /// This source table reads files from Open Table format databases like Delta Lake
    OpenTable(SourceOpenTable),
+
+   /// This source table gets its data by calling an api
+   Api(SourceApi),
 
 }
 
@@ -53,6 +57,11 @@ impl SourceTable {
         if table.register(&catalog).is_err() {
             panic!("Failed to start a source table.");
         };
+
+        match table.one_request() {
+            true => info!(target: table.table_name(), "Single request mode on. Will read table only once."),
+            false => info!(target: table.table_name(), "Single request mode off. Will continuously poll table for changes."), 
+        }
 
         spawn(async move {
             
@@ -123,6 +132,11 @@ impl SourceTable {
                 }
 
             };
+
+            if self.one_request() {
+                info!(target: self.table_name(), "Request made. Shutting down table.");
+                break
+            }
         
         }
     }
@@ -132,6 +146,7 @@ impl SourceTable {
         match self {
             Self::Files(table) => table.table_name(),
             Self::OpenTable(table) => table.table_name(),
+            Self::Api(table) => table.table_name(),
         }
     }
 
@@ -140,6 +155,7 @@ impl SourceTable {
         match self {
             Self::Files(table) => table.poll_interval(),
             Self::OpenTable(table) => table.poll_interval(),
+            Self::Api(table) => table.poll_interval(),
         }
     }
 
@@ -166,6 +182,7 @@ impl SourceTable {
 		match self {
 			Self::Files(table) => table.read_new_data().await,
             Self::OpenTable(table) => table.read_new_data().await,
+            Self::Api(table) => table.read_new_data().await,
 		}
 	}
 
@@ -225,8 +242,18 @@ impl SourceTable {
 		match self {
 			Self::Files(table) => table.on_fail(),
             Self::OpenTable(table) => table.on_fail(),
+            Self::Api(table) => table.on_fail(),
 		}
 	}
+
+    /// State whether the source table should be read once (true) or polled (false)
+    fn one_request(&self) -> bool {
+        match self {
+            Self::Files(table) => table.one_request,
+            Self::OpenTable(table) => table.one_request,
+            Self::Api(table) => table.one_request,
+        }
+    }
 
 }
 

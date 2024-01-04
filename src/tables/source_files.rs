@@ -50,6 +50,11 @@ pub struct SourceFiles {
     #[serde(default="ten_secs_as_millis")]
     pub poll_interval: u64,
 
+    /// Optional field. State if this source should read all the files just once (true) or 
+    /// if it should continuously check for new files (false). Defaults to false.
+    #[serde(default)]
+    pub one_request: bool,
+
     /// Optional field. Decide what to do when new data fails to be written to a destination.
     #[serde(default)]
     pub on_fail: FailAction,
@@ -168,7 +173,7 @@ mod tests {
         assert_eq!(table.table_name, "csv_table");
         assert_eq!(table.dirpath, PathBuf::from("./tests/data/csv_table/").canonicalize().unwrap());
         assert!(matches!(table.filetype, LakeFileType::Csv));
-        assert_eq!(table.bookmark, chrono::DateTime::<Utc>::MIN_UTC);
+        assert_eq!(table.bookmark, chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
         assert_eq!(table.poll_interval, 10_000);
         assert!(matches!(table.on_fail, FailAction::Stop));
 
@@ -248,7 +253,7 @@ mod tests {
 
     }
 
-     #[test]
+    #[test]
     fn typo_in_fieldname() {
     
         let content = String::from(r#"
@@ -259,7 +264,7 @@ mod tests {
         let table: Result<SourceFiles, toml::de::Error> = toml::from_str(&content);
 
         match table {
-        	Err(e) => assert_eq!(e.message(), "unknown field `filepath`, expected one of `table_name`, `dirpath`, `filetype`, `bookmark`, `poll_interval`, `on_fail`", "Incorrect error message."),
+        	Err(e) => assert_eq!(e.message(), "unknown field `filepath`, expected one of `table_name`, `dirpath`, `filetype`, `bookmark`, `poll_interval`, `one_request`, `on_fail`", "Incorrect error message."),
         	Ok(_) => assert!(false, "Table config parse should have returned an error."),
         }
 
@@ -364,7 +369,7 @@ mod tests {
         assert!(read_success);
         assert!(df_data.contains(&batch_one));
         assert!(df_data.contains(&batch_two));
-        assert!(table.bookmark > chrono::DateTime::<Utc>::MIN_UTC);
+        assert!(table.bookmark > chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap());
 
     }
 

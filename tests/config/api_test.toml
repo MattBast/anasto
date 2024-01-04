@@ -1,0 +1,18 @@
+[[source_table]]
+type = "api"
+table_name = "weather_source"
+endpoint_url = "https://api.open-meteo.com/v1/forecast"
+query = [
+    ["latitude", "52.52"],
+    ["longitude", "13.41"],
+    ["current", "temperature_2m,wind_speed_10m"],
+    ["hourly", "temperature_2m,relative_humidity_2m,wind_speed_10m"]
+]
+one_request = true
+
+[[destination_table]]
+type = "files"
+source_table_name = "weather_source"
+dest_table_name = "weather_destination"
+dirpath = "./tests/data/weather_table/"
+filetype = "json"

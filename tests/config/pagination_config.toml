@@ -1,0 +1,19 @@
+[[source_table]]
+type = "api"
+table_name = "users_source"
+endpoint_url = "https://reqres.in/api/users"
+one_request = true
+pagination = "page_increment"
+pagination_page_token_key = "page"
+pagination_page_number = 1
+pagination_page_size_key = "per_page"
+pagination_page_size = 5
+max_pagination_requests = 3
+select_field = ["data"]
+
+[[destination_table]]
+type = "files"
+source_table_name = "users_source"
+dest_table_name = "users_destination"
+dirpath = "./tests/data/users_table/"
+filetype = "csv"

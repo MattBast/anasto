@@ -6,13 +6,20 @@ use std::path::PathBuf;
 use serde::de::Error as SerdeError;
 use std::io::{Error, ErrorKind};
 use serde::*;
-use chrono::{ DateTime, offset::Utc };
+use chrono::{ DateTime, TimeZone, offset::Utc };
 use rnglib::{RNG, Language};
 use convert_case::{Case, Casing};
+use reqwest::{ 
+    Url, 
+    header::HeaderMap 
+};
+use std::collections::HashMap;
+use http::Error as HttpError;
+use std::time::Duration;
 
 // Datafusion to Avro conversion crates
 use datafusion::common::DFSchema;
-use arrow_schema::DataType as ArrowDataType;
+use arrow_schema::{ Field, Fields, Schema, DataType as ArrowDataType };
 use apache_avro::types::Value as AvroValue;
 use apache_avro::schema::{
     Schema as AvroSchema,
@@ -27,7 +34,14 @@ use apache_avro::{ Writer as AvroWriter, Codec };
 use uuid::Uuid;
 use std::collections::BTreeMap;
 
+// JSON to Datafusion schema crates
+use serde_json::Value;
+use std::sync::Arc;
 
+
+// **************************************************************************************
+// Config check code
+// ************************************************************************************** 
 
 /// Return an error if the string provided is more than 500 characters long
 pub fn five_hundred_chars_check<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
@@ -73,13 +87,104 @@ pub fn path_dir_check<'de, D: Deserializer<'de>>(d: D) -> Result<PathBuf, D::Err
 
 /// Return the timestamp “1970-01-01 00:00:00 UTC”
 pub fn start_of_time_timestamp() -> DateTime<Utc> {
-    chrono::DateTime::<Utc>::MIN_UTC
+    chrono::Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap()
 }
 
 /// Returns 10 seconds as 10,000 milliseconds
 pub fn ten_secs_as_millis() -> u64 {
 	10_000
 }
+
+/// Parse a Url type as a str
+pub fn serialize_url<S>(url: &Url, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(url.as_str())
+}
+
+/// Make sure that string is a valid url
+pub fn deserialize_url<'de, D: Deserializer<'de>>(d: D) -> Result<Url, D::Error> {
+
+    let s = String::deserialize(d)?;
+    let url_result = Url::parse(&s);
+
+    match url_result {
+        Ok(url) => Ok(url),
+        Err(_e) => {
+            let error_message = format!("The string '{}' is not a url.", &s);
+            Err(D::Error::custom(error_message))
+        }
+    }
+
+}
+
+/// Parse an Arrow Schema type as a String
+pub fn serialize_schema<S>(schema: &Option<Schema>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match schema {
+        Some(schema) => serializer.serialize_str(&schema.to_string()),
+        None => serializer.serialize_str("")
+    }
+}
+
+/// Make sure that headers are valid
+pub fn deserialize_header_map<'de, D: Deserializer<'de>>(d: D) -> Result<HeaderMap, D::Error> {
+
+    let headers: Vec<(String, String)> = Vec::deserialize(d)?;
+
+    let mut map: HashMap<String, String> = HashMap::new();
+
+    headers.iter().try_for_each(|(key, value)| { 
+        let _ = map.insert(key.to_string(), value.to_string()); 
+        Ok(())
+    })?;
+
+    let header_map: Result<HeaderMap, HttpError> = (&map).try_into();
+
+    match header_map {
+        Ok(header_map) => Ok(header_map),
+        Err(e) => Err(D::Error::custom(e.to_string()))
+    }
+
+}
+
+/// Parse a HeaderMap as a vector of string tuples
+pub fn serialize_header_map<S>(header_map: &HeaderMap, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{    
+    let raw_headers: Vec<String> = header_map.iter().map(|(key, value)| format!("({}{})", key.as_str(), value.to_str().unwrap())).collect();
+    serializer.serialize_str(&raw_headers.join(","))
+}
+
+/// Parse number as a duration
+pub fn deserialize_duration<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
+
+    let secs: u64 = match u64::deserialize(d) {
+        Ok(secs) => secs,
+        Err(e) => return Err(D::Error::custom(e.to_string()))
+    };
+    Ok(Some(Duration::from_secs(secs)))
+
+}
+
+/// Parse a Duration into a u64 type
+pub fn serialize_duration<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{    
+    match duration {
+        Some(duration) =>  serializer.serialize_str(&duration.as_secs().to_string()),
+        None =>  serializer.serialize_str("0")
+    }
+}
+
+// **************************************************************************************
+// Datafusion to Avro conversion code
+// ************************************************************************************** 
 
 /// Read all json files under the provided dirpath and write their content to an Avro file
 pub fn create_avro_file(df_schema: DFSchema, table_name: &str, dirpath: &String) -> Result<(), std::io::Error> {
@@ -290,6 +395,139 @@ fn json_to_avro(json: &serde_json::Value) -> AvroValue {
             AvroValue::Record(key_value_vec)
 
         }
+    }
+
+}
+
+// **************************************************************************************
+// JSON to Datafusion schema code
+// ************************************************************************************** 
+
+/// Generate an arrow schema from a josn value
+pub fn schema_from_json(json: &serde_json::Value, table_name: &String) -> Schema {
+    
+    let fields = fields_from_json(json, table_name);
+    Schema::new(fields)
+
+}
+
+/// Infer arrow fields type from a json value
+fn fields_from_json(json: &serde_json::Value, field_name: &String) -> Fields {
+    
+    match json {
+        
+        Value::Object(obj) => {
+            
+            let fields_vec: Vec<Field> = obj
+                .into_iter()
+                .map(|(key, value)| field_from_json(value, key))
+                .collect();
+
+            Fields::from(fields_vec)
+
+        },
+        Value::Array(arr) => {
+            
+            if arr.is_empty() {
+                Fields::empty()
+            } else {
+                fields_from_json(&arr[0], field_name)
+            }
+
+        },
+        _ => Fields::from(vec![field_from_json(json, field_name)]),
+    }
+
+}
+
+/// Infer an arrow field and datatype from a json value
+fn field_from_json(json: &serde_json::Value, field_name: &String) -> Field {
+    
+    match json {
+        Value::Null => Field::new(field_name, ArrowDataType::Null, true),
+        Value::Bool(_) => Field::new(field_name, ArrowDataType::Boolean, true),
+        Value::Number(value) => {
+
+            if value.is_f64() {     
+                Field::new(field_name, ArrowDataType::Float64, true)
+            } 
+            else if value.is_i64() {
+                Field::new(field_name, ArrowDataType::Int64, true)
+            }
+            else {
+                Field::new(field_name, ArrowDataType::Float64, true)
+            }
+        },
+        Value::String(_) => Field::new(field_name, ArrowDataType::Utf8, true),
+        Value::Array(arr) => {
+            
+            let list_field = if arr.is_empty() {
+                // default the type of the list items to a string if the list 
+                // is empty
+                Field::new(field_name, ArrowDataType::Utf8, true)
+            } else {
+                // or discover the type if there is at least one item
+                field_from_json(&arr[0], field_name)
+            };
+            
+            Field::new(field_name, ArrowDataType::List(Arc::new(list_field)), true)
+
+        },
+        Value::Object(obj) => {
+            
+            let fields_vec: Vec<Field> = obj
+                .into_iter()
+                .map(|(key, value)| field_from_json(value, key))
+                .collect();
+
+            let object_fields = Fields::from(fields_vec);
+            Field::new(field_name, ArrowDataType::Struct(object_fields), true)
+
+        }
+    }
+
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn schema_from_object_including_empty_array() {
+        
+        let json_object = json!({
+            "past_abilities": []
+        });
+        
+        let schema = schema_from_json(
+            &json_object, 
+            &"test_table".to_string()
+        );
+
+        let inner_field = Field::new("past_abilities", ArrowDataType::Utf8, true);
+        let list_field = Field::new("past_abilities", ArrowDataType::List(Arc::new(inner_field)), true);
+
+        let control_schema = Schema::new(vec![list_field]);
+
+        assert_eq!(schema, control_schema);
+
+    }
+
+    #[test]
+    fn schema_from_empty_array() {
+        
+        let json_object = json!([]);
+        
+        let schema = schema_from_json(
+            &json_object, 
+            &"test_table".to_string()
+        );
+
+        let control_schema = Schema::empty();
+
+        assert_eq!(schema, control_schema);
+
     }
 
 }
