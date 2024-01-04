@@ -426,7 +426,15 @@ fn fields_from_json(json: &serde_json::Value, field_name: &String) -> Fields {
             Fields::from(fields_vec)
 
         },
-        Value::Array(arr) => fields_from_json(&arr[0], field_name),
+        Value::Array(arr) => {
+            
+            if arr.is_empty() {
+                Fields::empty()
+            } else {
+                fields_from_json(&arr[0], field_name)
+            }
+
+        },
         _ => Fields::from(vec![field_from_json(json, field_name)]),
     }
 
@@ -506,8 +514,20 @@ mod tests {
 
     }
 
-    // ********************************************************************************
-    // write a test for possibility of an empty array getting passed to `fields_from_json`
-    // ********************************************************************************
+    #[test]
+    fn schema_from_empty_array() {
+        
+        let json_object = json!([]);
+        
+        let schema = schema_from_json(
+            &json_object, 
+            &"test_table".to_string()
+        );
+
+        let control_schema = Schema::empty();
+
+        assert_eq!(schema, control_schema);
+
+    }
 
 }

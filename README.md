@@ -145,7 +145,7 @@ And here's a description of each of the fields:
 ### API (Source Table) 
 A source table that is read from an API. It works by calling a specified API endpoint either once or polled continuously and sending all selected data in the response to be written as a table. A bookmark can be inserted into the request to request only new data. Pagination can also be configured for endpoints that return more data than can be received in a single request.
 
-Here's an example:
+Here's an example calling the [Pokeapi](https://pokeapi.co/) API:
 ```toml
 [[source_table]]
 type = "api"
@@ -185,7 +185,7 @@ And here's a description of each of the fields:
 | pagination_cursor_record   | Enum                     | Optional field. Define which record in a response contains the cursor. Defaults to the last record. Can be one of: first, last         |
 | pagination_cursor_location | Enum           | Optional field. State where the pagination cursor should be placed in the request.  Can be one of: body, header.                                 |
 
-Here's some more examples for how to configure the API source. The first adds query parameters to the request:
+Here's some more examples for how to configure the API source. The first adds query parameters to a request to the [Open Meteo](https://open-meteo.com/) endpoint:
 ```toml
 [[source_table]]
 type = "api"
@@ -198,6 +198,22 @@ query = [
     ["hourly", "temperature_2m,relative_humidity_2m,wind_speed_10m"]
 ]
 one_request = true
+```
+
+And this one uses pagination (page increment approach) to make multiple requests to the [Regres](https://reqres.in/) users endpoint:
+```toml
+[[source_table]]
+type = "api"
+table_name = "users_source"
+endpoint_url = "https://reqres.in/api/users"
+one_request = true
+pagination = "page_increment"
+pagination_page_token_key = "page"
+pagination_page_number = 1
+pagination_page_size_key = "per_page"
+pagination_page_size = 5
+max_pagination_requests = 3
+select_field = ["data"]
 ```
 
 ### Open Table (Source Table) 
